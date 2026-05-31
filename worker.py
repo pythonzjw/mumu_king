@@ -110,6 +110,12 @@ class Worker:
                 elif state == GameState.REWARD_POPUP:
                     self.unknown_count = 0
                     self._handle_reward_popup()
+                elif state == GameState.BUY_STAMINA:
+                    self.unknown_count = 0
+                    self._handle_buy_stamina()
+                elif state == GameState.WHEEL:
+                    self.unknown_count = 0
+                    self._handle_wheel()
                 else:
                     self.unknown_count += 1
                     # UNKNOWN 时输出各模板得分 + 强制存截图（带 _unknown 后缀）方便诊断
@@ -207,5 +213,24 @@ class Worker:
         """弹了「获得奖励」→ 点弹窗外安全点关闭，下一轮回 PERFECT_CLEAR 继续"""
         x, y = REWARD_OUTSIDE
         self.log(f"获得奖励弹窗，点弹窗外 ({x},{y}) 关闭")
+        self.adb.tap(x, y)
+        self._sleep(0.6)
+
+    def _handle_buy_stamina(self):
+        """体力不足弹「购买体力」→ 点空白关闭 → sleep 30 分钟等体力自然恢复
+        点完后下一轮主循环重新识别（理论上回 HOME，但有 30 分钟睡眠不会再触发进入按钮）
+        """
+        x, y = REWARD_OUTSIDE
+        self.log(f"购买体力弹窗，点空白 ({x},{y}) 关闭")
+        self.adb.tap(x, y)
+        self._sleep(0.6)
+        mins = STAMINA_ZERO_WAIT_SECONDS // 60
+        self.log(f"体力不足，等待 {mins} 分钟后再操作")
+        self._sleep(STAMINA_ZERO_WAIT_SECONDS)
+
+    def _handle_wheel(self):
+        """战斗中击杀 boss 后弹的轮盘 → 点空白关闭，不参与轮盘选择"""
+        x, y = REWARD_OUTSIDE
+        self.log(f"轮盘弹窗，点空白 ({x},{y}) 关闭")
         self.adb.tap(x, y)
         self._sleep(0.6)

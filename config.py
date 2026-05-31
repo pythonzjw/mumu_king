@@ -61,6 +61,8 @@ class GameState:
     SETTLE = "SETTLE"              # 战斗结算/确定按钮（含失败页）
     PERFECT_CLEAR = "PERFECT_CLEAR"  # 完美通关页（红色印章 + 三个金边宝箱）
     REWARD_POPUP = "REWARD_POPUP"  # 点宝箱后弹的「获得奖励」弹窗
+    BUY_STAMINA = "BUY_STAMINA"    # 体力不足时的「购买体力」弹窗
+    WHEEL = "WHEEL"                # 战斗中击杀 boss 后的轮盘选技能弹窗（不参与，点空白关闭）
     UNKNOWN = "UNKNOWN"
 
 # === 默认技能优先级（substring 匹配，越靠前越优先）===
