@@ -8,36 +8,36 @@ import tkinter as tk
 from tkinter import scrolledtext, messagebox
 import threading
 
-from config import ADB_PATH, DEFAULT_SKILL_PRIORITY
+from config import ADB_PATH, DEFAULT_SKILL_PRIORITY, MUMU_CANDIDATE_PORTS
 
 
 # 设备分类规则
 # MuMu Player 12: 127.0.0.1:16384 / 16416 / 16448 ...
-# MuMu Player 6 / X / 老 emulator: emulator-XXXX、127.0.0.1:7555
-# 其他模拟器（雷电/夜神/逍遥）: 127.0.0.1:其他端口
+# 其他模拟器（雷电/夜神/逍遥/MuMu 6 老 emulator-console）: emulator-XXXX 或其他端口
 # 物理设备：纯字母数字 ID（如 313d4194）
 _RE_LOOPBACK = re.compile(r"^127\.0\.0\.1:(\d+)$")
-_MUMU_TCP_PORTS = {16384, 16416, 16448, 16480, 16512, 16544, 16576, 16608, 7555}
+_MUMU_TCP_PORTS = set(MUMU_CANDIDATE_PORTS)
 
 
 def classify_serial(serial):
-    """返回 ('mumu' | 'emulator' | 'physical', 是否默认勾选)"""
+    """返回 ('mumu' | 'emulator' | 'physical', 是否默认勾选, 备注文字)"""
     s = serial.strip()
     m = _RE_LOOPBACK.match(s)
     if m:
         port = int(m.group(1))
         if port in _MUMU_TCP_PORTS:
-            return "mumu", True
-        return "emulator", False
+            return "mumu", True, ""
+        return "emulator", False, ""
     if s.startswith("emulator-"):
-        # MuMu 12 偶尔也会以 emulator-XXXX 形式出现，归为 mumu 候选但默认不勾，让用户确认
-        return "mumu", False
-    return "physical", False
+        # 雷电 / 夜神 / MuMu 6 老 emulator-console 都长这样
+        # 默认不勾，警告用户这通常不是 MuMu 12
+        return "emulator", False, "⚠ 通常是雷电/夜神，不是 MuMu 12"
+    return "physical", False, ""
 
 
 CATEGORY_LABEL = {
     "mumu": "MuMu 模拟器",
-    "emulator": "其他模拟器",
+    "emulator": "其他模拟器 / 老 MuMu",
     "physical": "物理设备（USB 手机等，请谨慎勾选）",
 }
 
@@ -128,20 +128,32 @@ class App:
     # ============================================================
 
     def _scan_devices(self):
-        """点「扫描」：开线程跑 adb devices，结果回主线程刷新 UI"""
+        """点「扫描」：先 connect MuMu 候选端口让其注册到 adb server，再 adb devices"""
         self.scan_status.config(text="扫描中...", fg="gray")
 
         def _do():
             adb_path = self.adb_var.get().strip()
             self._append_log(f"[scan] 用 adb: {adb_path}")
-            from adb import start_server, list_devices, AdbError
+            from adb import start_server, list_devices, connect, AdbError
             try:
                 start_server(adb_path)
             except AdbError as e:
                 self._append_log(f"[scan] start-server 失败: {e}")
                 self.root.after(0, lambda: self.scan_status.config(
-                    text=f"adb 路径无效，请改 adb.exe 路径", fg="red"))
+                    text="adb 路径无效，请改 adb.exe 路径", fg="red"))
                 return
+
+            # 主动 connect MuMu 12 默认端口，让它出现在 adb devices 里
+            connected = []
+            for port in MUMU_CANDIDATE_PORTS:
+                hp = f"127.0.0.1:{port}"
+                if connect(adb_path, hp):
+                    connected.append(hp)
+            if connected:
+                self._append_log(f"[scan] 已 connect MuMu 端口: {connected}")
+            else:
+                self._append_log(f"[scan] MuMu 候选端口 {MUMU_CANDIDATE_PORTS} 都连不上（可能 MuMu 没开/端口不在候选）")
+
             try:
                 serials = list_devices(adb_path)
             except AdbError as e:
@@ -173,8 +185,8 @@ class App:
 
         groups = {"mumu": [], "emulator": [], "physical": []}
         for s in serials:
-            cat, default_check = classify_serial(s)
-            groups[cat].append((s, default_check))
+            cat, default_check, note = classify_serial(s)
+            groups[cat].append((s, default_check, note))
 
         for cat in ["mumu", "emulator", "physical"]:
             items = groups[cat]
@@ -185,14 +197,16 @@ class App:
                 self.devices_frame, text=CATEGORY_LABEL[cat],
                 anchor="w", fg=color, font=("", 10, "bold"),
             ).pack(fill="x", pady=(4, 0))
-            for s, default_check in items:
+            for s, default_check, note in items:
                 # 优先用旧勾选；否则用分类默认
                 checked = old_checked.get(s, default_check)
                 var = tk.BooleanVar(value=checked)
                 self.device_vars[s] = var
-                tk.Checkbutton(
-                    self.devices_frame, text=s, variable=var, anchor="w",
-                ).pack(fill="x", padx=15)
+                row = tk.Frame(self.devices_frame)
+                row.pack(fill="x", padx=15)
+                tk.Checkbutton(row, text=s, variable=var, anchor="w").pack(side="left")
+                if note:
+                    tk.Label(row, text=note, fg="red", anchor="w").pack(side="left", padx=(8, 0))
 
         self.scan_status.config(
             text=f"发现 {len(serials)} 个设备（已为 MuMu 默认勾选）", fg="green",

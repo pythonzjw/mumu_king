@@ -94,6 +94,22 @@ def start_server(adb_path):
         raise AdbError("adb start-server 超时")
 
 
+def connect(adb_path, host_port):
+    """adb connect 127.0.0.1:{port}；失败/超时静默返回 False（端口可能没开）"""
+    try:
+        proc = subprocess.run(
+            [adb_path, "connect", host_port],
+            capture_output=True,
+            timeout=3,
+            text=True,
+        )
+        out = (proc.stdout or "") + (proc.stderr or "")
+        # adb connect 成功输出 "connected to ..." 或 "already connected"
+        return "connected" in out.lower()
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
 def list_devices(adb_path):
     """返回 adb devices 列表中所有 'device' 状态的 serial"""
     try:

@@ -4,6 +4,7 @@
 - 每个 Worker 一根 daemon 线程，互不干扰
 """
 import os
+import sys
 import time
 import cv2
 
@@ -34,10 +35,12 @@ class Worker:
         # 完美通关页已点的宝箱数（0~3）；点完 3 个后左滑回原页面，重置为 0
         self.chests_clicked = 0
         if self.debug:
-            self.debug_dir = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)),
-                "debug_run", self.name,
-            )
+            # PyInstaller --onefile 下 __file__ 指向临时解压目录退出即清，
+            # 改用 sys.executable 所在目录；serial 中的 ":" Windows 文件系统不允许，转 "_"
+            base = (os.path.dirname(sys.executable) if getattr(sys, "frozen", False)
+                    else os.path.dirname(os.path.abspath(__file__)))
+            safe_name = self.name.replace(":", "_")
+            self.debug_dir = os.path.join(base, "debug_run", safe_name)
             os.makedirs(self.debug_dir, exist_ok=True)
 
     def log(self, msg):
