@@ -5,12 +5,17 @@
 - 模板缺失时抛 RecognizeError，让用户先放图
 """
 import os
+import threading
 from functools import lru_cache
 
 import cv2
 import numpy as np
 
 from config import TEMPLATES_DIR, MATCH_THRESHOLD, GameState
+
+# OCR 全局锁：多 worker 共用 GPU（DirectML）时同时推理会 native 崩溃
+# 用锁串行化 OCR 调用；GPU 单次推理 ~10ms，3 worker 串行 30ms 几乎无感
+_OCR_LOCK = threading.Lock()
 
 
 class RecognizeError(RuntimeError):
@@ -199,6 +204,7 @@ def ocr_skill_cards(screen, card_rois, ocr):
     card_rois: [(x1, y1, x2, y2), ...]，长度 3。坐标基于截图分辨率
     ocr: cnocr 实例（由调用方提供，避免共享）
     text 为空字符串表示该卡 OCR 失败
+    多 worker 同时调 DirectML 会 native 崩溃，用 _OCR_LOCK 串行
     """
     results = []
     for x1, y1, x2, y2 in card_rois:
@@ -207,7 +213,8 @@ def ocr_skill_cards(screen, card_rois, ocr):
         cy = (y1 + y2) // 2
         text = ""
         try:
-            lines = ocr.ocr(crop)
+            with _OCR_LOCK:
+                lines = ocr.ocr(crop)
             text = "".join(line["text"] for line in lines)
         except Exception:
             text = ""
@@ -217,14 +224,14 @@ def ocr_skill_cards(screen, card_rois, ocr):
 
 def read_stamina(screen, roi, ocr):
     """OCR 左上角体力数字（如 "30/31"），返回 (current, max)；失败返回 (None, None)。
-    roi: (x1, y1, x2, y2)
-    ocr: cnocr 实例（由调用方提供）
+    多 worker 同时调 DirectML 会 native 崩溃，用 _OCR_LOCK 串行
     """
     import re
     x1, y1, x2, y2 = roi
     crop = screen[y1:y2, x1:x2]
     try:
-        lines = ocr.ocr(crop)
+        with _OCR_LOCK:
+            lines = ocr.ocr(crop)
         text = "".join(line["text"] for line in lines)
     except Exception:
         return None, None
