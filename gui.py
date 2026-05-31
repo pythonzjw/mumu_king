@@ -166,7 +166,7 @@ class App:
         def _do():
             adb_path = self.adb_var.get().strip()
             self._append_log(f"[scan] 用 adb: {adb_path}")
-            from adb import start_server, list_devices, connect, AdbError
+            from adb import start_server, connect, AdbError
             try:
                 start_server(adb_path)
             except AdbError as e:
@@ -175,7 +175,8 @@ class App:
                     text="adb 路径无效，请改 adb.exe 路径", fg="red"))
                 return
 
-            # 主动 connect MuMu 12 默认端口，让它出现在 adb devices 里
+            # 只 connect MuMu 候选端口；不调 adb devices，避免显示其他自动化工具用的设备
+            # （雷电模拟器 / USB 手机等不会被列出，也不会因 list_devices 干扰它们）
             connected = []
             for port in MUMU_CANDIDATE_PORTS:
                 hp = f"127.0.0.1:{port}"
@@ -186,22 +187,7 @@ class App:
             else:
                 self._append_log(f"[scan] MuMu 候选端口 {MUMU_CANDIDATE_PORTS} 都连不上（可能 MuMu 没开/端口不在候选）")
 
-            try:
-                serials = list_devices(adb_path)
-            except AdbError as e:
-                self._append_log(f"[scan] adb devices 失败: {e}")
-                self.root.after(0, lambda: self.scan_status.config(
-                    text=f"扫描失败: {e}", fg="red"))
-                return
-            self._append_log(f"[scan] 扫到 {len(serials)} 个原始设备: {serials}")
-
-            # 同一物理设备可能以多个 serial 出现（如 MuMu 同时绑 16384 和 7555）
-            # 用 ro.serialno 等硬件属性合并，每组留一个最优 serial（优先 MuMu 16384 槽位）
-            from adb import get_device_id
-            merged = self._merge_duplicate_serials(adb_path, serials, get_device_id)
-            if len(merged) != len(serials):
-                self._append_log(f"[scan] 合并后 {len(merged)} 个唯一设备: {merged}")
-            self.root.after(0, lambda: self._render_devices(merged))
+            self.root.after(0, lambda: self._render_devices(connected))
 
         threading.Thread(target=_do, daemon=True).start()
 

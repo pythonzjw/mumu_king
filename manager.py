@@ -6,7 +6,7 @@
 """
 import threading
 
-from adb import AdbClient, start_server, list_devices, AdbError
+from adb import AdbClient, start_server, connect, AdbError
 from worker import Worker
 
 
@@ -25,28 +25,25 @@ class BotManager:
         self.log_fn(f"[manager] {msg}")
 
     def start(self):
-        """启动所有 worker。返回成功启动的 serial 列表"""
+        """启动所有 worker。返回成功启动的 serial 列表。
+        不再跑 adb devices 拉全设备列表（避免影响雷电/手机等其他 adb 用户）；
+        每个 MuMu serial 用 adb connect 试一次，连上就启动 worker。"""
         try:
             start_server(self.adb_path)
         except AdbError as e:
             self._log(f"adb start-server 失败: {e}")
             return []
 
-        try:
-            online = set(list_devices(self.adb_path))
-        except AdbError as e:
-            self._log(f"adb devices 失败: {e}")
-            return []
-
-        self._log(f"在线设备: {sorted(online)}")
         started = []
         for serial in self.serials:
             serial = str(serial).strip()
             if not serial:
                 continue
-            if serial not in online:
-                self._log(f"跳过离线设备: {serial}")
-                continue
+            # 只对 127.0.0.1:port 形式的 serial 主动 connect；其他形式直接尝试
+            if serial.startswith("127.0.0.1:"):
+                if not connect(self.adb_path, serial):
+                    self._log(f"跳过连不上的设备: {serial}")
+                    continue
             client = AdbClient(self.adb_path, serial)
             worker = Worker(
                 adb_client=client,
