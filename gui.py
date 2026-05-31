@@ -133,14 +133,23 @@ class App:
 
         def _do():
             adb_path = self.adb_var.get().strip()
+            self._append_log(f"[scan] 用 adb: {adb_path}")
             from adb import start_server, list_devices, AdbError
             try:
                 start_server(adb_path)
+            except AdbError as e:
+                self._append_log(f"[scan] start-server 失败: {e}")
+                self.root.after(0, lambda: self.scan_status.config(
+                    text=f"adb 路径无效，请改 adb.exe 路径", fg="red"))
+                return
+            try:
                 serials = list_devices(adb_path)
             except AdbError as e:
+                self._append_log(f"[scan] adb devices 失败: {e}")
                 self.root.after(0, lambda: self.scan_status.config(
                     text=f"扫描失败: {e}", fg="red"))
                 return
+            self._append_log(f"[scan] 扫到 {len(serials)} 个设备: {serials}")
             self.root.after(0, lambda: self._render_devices(serials))
 
         threading.Thread(target=_do, daemon=True).start()
@@ -229,7 +238,15 @@ class App:
     # ============================================================
 
     def _start(self):
+        import os
         adb_path = self.adb_var.get().strip()
+        if not os.path.exists(adb_path):
+            messagebox.showerror(
+                "adb.exe 路径无效",
+                f"找不到 adb.exe：\n{adb_path}\n\n"
+                "请在「adb.exe 路径」里填正确路径（一般是 MuMu 安装目录下的 adb.exe）",
+            )
+            return
         serials = self._selected_serials()
         if not serials:
             messagebox.showwarning("没有勾选设备", "请先点「扫描设备」并勾选至少一个设备")

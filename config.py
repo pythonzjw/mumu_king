@@ -16,8 +16,28 @@ TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 # === ADB 配置 ===
 # 默认用 MuMu 自带 adb.exe，避免与雷电 / Android SDK / 手机调试用的 adb 冲突
 # （冲突会触发 server 版本不一致 → kill 重启 → 所有 adb 连接瞬断）
+# 启动时自动从下面候选里挑第一个存在的；都不存在则用第一个作为提示
 # GUI 可改
-ADB_PATH = r"C:\Program Files\Netease\MuMuPlayer-12.0\shell\adb.exe"
+import os as _os
+
+ADB_PATH_CANDIDATES = [
+    r"C:\Program Files\Netease\MuMuPlayer-12.0\shell\adb.exe",
+    r"C:\Program Files\Netease\MuMu\nx_main\adb.exe",
+    r"C:\Program Files\MuMuPlayer\nx_main\adb.exe",
+    r"E:\应用\工具\MuMuPlayer\nx_main\adb.exe",
+    r"D:\Program Files\Netease\MuMuPlayer-12.0\shell\adb.exe",
+    r"D:\MuMuPlayer\nx_main\adb.exe",
+]
+
+
+def _find_adb():
+    for p in ADB_PATH_CANDIDATES:
+        if _os.path.exists(p):
+            return p
+    return ADB_PATH_CANDIDATES[0]  # 都没找到给第一个，让用户看到再手动改
+
+
+ADB_PATH = _find_adb()
 
 # === 延迟配置（秒） ===
 LOOP_INTERVAL = 0.5          # 主循环每次截图间隔
