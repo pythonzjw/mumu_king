@@ -18,7 +18,8 @@ from config import (
 from adb import AdbError
 from recognizer import (
     detect_state, find_enter_button, find_settle_button,
-    ocr_skill_cards, pick_skill_by_priority, read_stamina, RecognizeError,
+    ocr_skill_cards, pick_skill_by_priority, read_stamina,
+    all_template_scores, RecognizeError,
 )
 
 
@@ -90,7 +91,14 @@ class Worker:
                     self._handle_reward_popup()
                 else:
                     self.unknown_count += 1
-                    self.log(f"未知状态 ({self.unknown_count}/{self.max_unknown})")
+                    # UNKNOWN 时输出各模板得分 + 强制存截图（带 _unknown 后缀）方便诊断
+                    if self.unknown_count <= 3 or self.unknown_count % 10 == 0:
+                        scores = all_template_scores(screen)
+                        score_text = " ".join(f"{k}={v:.2f}" for k, v in scores.items())
+                        self.log(f"未知状态 ({self.unknown_count}/{self.max_unknown}) 得分: {score_text}")
+                        # 即使没勾 debug 也强制存第 1 张 UNKNOWN 截图（用于诊断）
+                        if self.debug:
+                            self._save_debug(screen, "_unknown")
                     if self.unknown_count >= self.max_unknown:
                         self.log("连续未知过多，重置计数继续")
                         self.unknown_count = 0

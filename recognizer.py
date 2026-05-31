@@ -93,6 +93,23 @@ def detect_state(screen):
     return GameState.UNKNOWN
 
 
+def all_template_scores(screen):
+    """返回所有模板的匹配得分，用于 UNKNOWN 状态诊断"""
+    names = [
+        ("enter", TPL_ENTER),
+        ("battle", TPL_BATTLE),
+        ("skill", TPL_SKILL_TITLE),
+        ("settle", TPL_SETTLE),
+        ("perfect", TPL_PERFECT),
+        ("reward", TPL_REWARD),
+    ]
+    result = {}
+    for label, tpl in names:
+        score, _ = _try_match(screen, tpl)
+        result[label] = score
+    return result
+
+
 def find_enter_button(screen):
     score, pos = _try_match(screen, TPL_ENTER)
     return pos if score >= MATCH_THRESHOLD else None

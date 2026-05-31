@@ -110,7 +110,7 @@ class App:
             f4, text="停止", command=self._stop, width=10, state="disabled",
         )
         self.btn_stop.pack(side="left", padx=(0, 10))
-        self.debug_var = tk.BooleanVar(value=False)
+        self.debug_var = tk.BooleanVar(value=True)
         tk.Checkbutton(f4, text="调试模式（保存每步截图）", variable=self.debug_var).pack(side="left")
 
         # 状态
