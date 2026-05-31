@@ -13,11 +13,12 @@ from config import (
     SETTLE_WAIT, SKILL_SELECT_DELAY, SKILL_CARD_ROIS,
     CHEST_POSITIONS, CHEST_WAIT, REWARD_OUTSIDE,
     SWIPE_LEFT_FROM, SWIPE_LEFT_TO, SWIPE_LEFT_DURATION_MS,
+    STAMINA_ROI, STAMINA_ZERO_WAIT_SECONDS,
 )
 from adb import AdbError
 from recognizer import (
     detect_state, find_enter_button, find_settle_button,
-    ocr_skill_cards, pick_skill_by_priority, RecognizeError,
+    ocr_skill_cards, pick_skill_by_priority, read_stamina, RecognizeError,
 )
 
 
@@ -111,6 +112,15 @@ class Worker:
         self.log("已停止")
 
     def _handle_home(self, screen):
+        # 进按钮前先查体力，0 就等 30 分钟（避免 0 体力点了被弹"体力不足"）
+        cur, mx = read_stamina(screen, STAMINA_ROI)
+        if cur is not None:
+            self.log(f"体力 {cur}/{mx}")
+            if cur <= 0:
+                mins = STAMINA_ZERO_WAIT_SECONDS // 60
+                self.log(f"体力为 0，等待 {mins} 分钟后再检测")
+                self._sleep(STAMINA_ZERO_WAIT_SECONDS)
+                return
         pos = find_enter_button(screen)
         if pos is None:
             self.log("未定位进入按钮")

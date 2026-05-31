@@ -9,6 +9,7 @@ from tkinter import scrolledtext, messagebox
 import threading
 
 from config import ADB_PATH, DEFAULT_SKILL_PRIORITY, MUMU_CANDIDATE_PORTS
+import settings
 
 
 # 设备分类规则
@@ -51,7 +52,10 @@ class App:
         self.manager = None
         # serial → tk.BooleanVar，记录每个设备是否被勾选
         self.device_vars = {}
+        # 加载持久化设置（不存在则空 dict）
+        self.settings = settings.load()
         self._build_ui()
+        self._restore_from_settings()
 
     def _build_ui(self):
         # adb 路径
@@ -122,6 +126,35 @@ class App:
             f6, state="disabled", font=("Consolas", 9), wrap="word",
         )
         self.log_text.pack(fill="both", expand=True)
+
+    def _restore_from_settings(self):
+        """从 settings 恢复 adb 路径 / 优先级 / debug / 上次勾选过的 serial"""
+        if "adb_path" in self.settings:
+            self.adb_var.set(self.settings["adb_path"])
+        if "priority" in self.settings:
+            p = self.settings["priority"]
+            if isinstance(p, list) and p:
+                self.priority_var.set(", ".join(p))
+        if "debug" in self.settings:
+            self.debug_var.set(bool(self.settings["debug"]))
+        # 上次勾选过的 serial：以"手动加入"方式预填，用户不扫描也能直接开始
+        last_serials = self.settings.get("serials", [])
+        for s in last_serials:
+            if s and s not in self.device_vars:
+                var = tk.BooleanVar(value=True)
+                self.device_vars[s] = var
+                tk.Checkbutton(
+                    self.devices_frame, text=f"{s} (上次)", variable=var, anchor="w",
+                ).pack(fill="x", padx=15)
+
+    def _save_settings(self):
+        """把当前 GUI 状态存到 settings.json"""
+        settings.save({
+            "adb_path": self.adb_var.get().strip(),
+            "priority": [s.strip() for s in self.priority_var.get().split(",") if s.strip()],
+            "debug": self.debug_var.get(),
+            "serials": self._selected_serials(),
+        })
 
     # ============================================================
     # 设备扫描 + 勾选
@@ -323,6 +356,9 @@ class App:
             priority = [s.strip() for s in priority_text.split(",") if s.strip()]
         else:
             priority = list(DEFAULT_SKILL_PRIORITY)
+
+        # 持久化当前设置，下次启动自动恢复
+        self._save_settings()
 
         from manager import BotManager
         self.manager = BotManager(

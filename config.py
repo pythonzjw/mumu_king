@@ -65,8 +65,9 @@ class GameState:
 
 # === 默认技能优先级（substring 匹配，越靠前越优先）===
 DEFAULT_SKILL_PRIORITY = [
-    "冰锥", "冰霜", "电磁网", "额外", "分裂",
-    "爆炸", "滚木", "火球", "聚焦", "伤害", "穿透",
+    "解锁冰锥", "解锁电磁网", "分裂", "首次",
+    "冰锥", "冰霜", "额外", "爆炸",
+    "滚木", "火球", "聚焦", "伤害", "穿透",
 ]
 
 # === 技能卡 OCR ROI ===
@@ -92,3 +93,8 @@ REWARD_OUTSIDE = (540, 400)
 SWIPE_LEFT_FROM = (900, 960)
 SWIPE_LEFT_TO = (180, 960)
 SWIPE_LEFT_DURATION_MS = 400
+
+# === 左上角体力数字 OCR ROI（"30/31" 这种）===
+STAMINA_ROI = (245, 80, 530, 165)
+# 体力为 0 时等待时间（秒）：30 分钟（游戏体力恢复速度）
+STAMINA_ZERO_WAIT_SECONDS = 30 * 60

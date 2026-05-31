@@ -3,10 +3,15 @@ ADB 客户端封装
 - subprocess 调 adb.exe，截图 / 点击 / 在线检查
 - 写死走 config.ADB_PATH（默认 MuMu 自带 adb.exe）避免 server 版本冲突
 - 每个 AdbClient 绑定一个 serial（127.0.0.1:port），多实例互不干扰
+- Windows 下所有 subprocess 加 CREATE_NO_WINDOW 隐藏 cmd 黑窗
 """
 import subprocess
+import sys
 import numpy as np
 import cv2
+
+# Windows 下隐藏 subprocess 弹出的 cmd 黑窗；其他平台是 0（无效果）
+_NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 
 class AdbError(RuntimeError):
@@ -27,6 +32,7 @@ class AdbClient:
                 cmd,
                 capture_output=True,
                 timeout=timeout,
+                creationflags=_NO_WINDOW,
                 # capture_binary 时不能 text=True，stdout 必须是 bytes
             )
         except FileNotFoundError:
@@ -87,6 +93,7 @@ def start_server(adb_path):
             [adb_path, "start-server"],
             capture_output=True,
             timeout=10,
+            creationflags=_NO_WINDOW,
         )
     except FileNotFoundError:
         raise AdbError(f"找不到 adb.exe: {adb_path}")
@@ -102,6 +109,7 @@ def connect(adb_path, host_port):
             capture_output=True,
             timeout=3,
             text=True,
+            creationflags=_NO_WINDOW,
         )
         out = (proc.stdout or "") + (proc.stderr or "")
         # adb connect 成功输出 "connected to ..." 或 "already connected"
@@ -119,6 +127,7 @@ def get_device_id(adb_path, serial):
             proc = subprocess.run(
                 [adb_path, "-s", serial, "shell", "getprop", prop],
                 capture_output=True, timeout=3, text=True,
+                creationflags=_NO_WINDOW,
             )
             val = (proc.stdout or "").strip()
             if val:
@@ -136,6 +145,7 @@ def list_devices(adb_path):
             capture_output=True,
             timeout=5,
             text=True,
+            creationflags=_NO_WINDOW,
         )
     except FileNotFoundError:
         raise AdbError(f"找不到 adb.exe: {adb_path}")

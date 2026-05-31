@@ -137,6 +137,26 @@ def ocr_skill_cards(screen, card_rois):
     return results
 
 
+def read_stamina(screen, roi):
+    """OCR 左上角体力数字（如 "30/31"），返回 (current, max)；失败返回 (None, None)。
+    roi: (x1, y1, x2, y2)
+    """
+    import re
+    x1, y1, x2, y2 = roi
+    crop = screen[y1:y2, x1:x2]
+    try:
+        ocr = _get_ocr()
+        lines = ocr.ocr(crop)
+        text = "".join(line["text"] for line in lines)
+    except Exception:
+        return None, None
+    # 文本里抓 "数字/数字" 模式
+    m = re.search(r"(\d+)\s*/\s*(\d+)", text)
+    if m:
+        return int(m.group(1)), int(m.group(2))
+    return None, None
+
+
 def pick_skill_by_priority(cards, priority):
     """按 priority 关键字列表挨个匹配 cards 文本，返回第一个命中的 (cx, cy, keyword, text)。
     没命中返回 None。"""
