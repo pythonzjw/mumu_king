@@ -39,9 +39,9 @@ def _find_adb():
 
 ADB_PATH = _find_adb()
 
-# MuMu 12 默认 ADB 端口候选：16384 起，每多一个实例 +32；MuMu 6 老端口 7555
-# 扫描时先 connect 这些端口，让 MuMu 出现在 adb devices 列表里
-MUMU_CANDIDATE_PORTS = [16384, 16416, 16448, 16480, 16512, 16544, 16576, 16608, 7555]
+# MuMu 12 默认 ADB 端口候选：16384 起，每多一个实例 +32
+# 扫描时只 connect 这些端口（去掉 7555 避免与 16384 重复指向同一台 MuMu）
+MUMU_CANDIDATE_PORTS = [16384, 16416, 16448, 16480, 16512, 16544, 16576, 16608]
 
 # === 延迟配置（秒） ===
 LOOP_INTERVAL = 0.5          # 主循环每次截图间隔

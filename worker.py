@@ -32,7 +32,7 @@ from adb import AdbError
 from recognizer import (
     detect_state, find_enter_button, find_settle_button,
     ocr_skill_cards, pick_skill_by_priority, read_stamina,
-    all_template_scores, RecognizeError,
+    all_template_scores, make_ocr, RecognizeError,
 )
 
 
@@ -49,6 +49,9 @@ class Worker:
         self.step_count = 0
         # 完美通关页已点的宝箱数（0~3）；点完 3 个后左滑回原页面，重置为 0
         self.chests_clicked = 0
+        # OCR 实例：在 run() 第一行 lazy 创建，让多个 worker 在各自线程并行加载 onnx 模型
+        # 避免主线程串行 init 时 3 个 worker 等 30s
+        self.ocr = None
         if self.debug:
             # PyInstaller --onefile 下 __file__ 指向临时解压目录退出即清，
             # 改用 sys.executable 所在目录；serial 中的 ":" Windows 文件系统不允许，转 "_"
@@ -78,6 +81,10 @@ class Worker:
 
     def run(self):
         self.log("启动")
+        # 在线程内立刻加载 cnocr（多 worker 并行加载，比主线程串行快）
+        self.log("[ocr] 加载中...")
+        self.ocr = make_ocr()
+        self.log("[ocr] 加载完成，开始识别")
         while self.running:
             try:
                 screen = self.adb.screencap()
@@ -135,7 +142,7 @@ class Worker:
 
     def _handle_home(self, screen):
         # 进按钮前先查体力，0 就等 30 分钟（避免 0 体力点了被弹"体力不足"）
-        cur, mx = read_stamina(screen, STAMINA_ROI)
+        cur, mx = read_stamina(screen, STAMINA_ROI, self.ocr)
         if cur is not None:
             self.log(f"体力 {cur}/{mx}")
             if cur <= 0:
@@ -156,7 +163,7 @@ class Worker:
         self._sleep(BATTLE_WAIT)
 
     def _handle_skill_select(self, screen):
-        cards = ocr_skill_cards(screen, SKILL_CARD_ROIS)
+        cards = ocr_skill_cards(screen, SKILL_CARD_ROIS, self.ocr)
         for i, (cx, cy, text) in enumerate(cards, 1):
             self.log(f"  技能卡 {i}: {text or '(OCR 失败)'}")
         hit = pick_skill_by_priority(cards, self.skill_priority)

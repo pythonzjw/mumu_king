@@ -121,24 +121,22 @@ def find_settle_button(screen):
 
 
 # === 技能卡 OCR ===
-# cnocr 全局单例，多线程共用一个；首次 detect 会触发模型加载（500MB onnx，慢）
-_ocr = None
+# 不用全局单例：多 worker 共用一个 cnocr 会序列化、互相阻塞、且非线程安全
+# 改为工厂函数，每个 worker 自己 make_ocr() 持有独立实例
 
 
-def _get_ocr():
-    global _ocr
-    if _ocr is None:
-        from cnocr import CnOcr
-        _ocr = CnOcr()
-    return _ocr
+def make_ocr():
+    """新建一个 cnocr 实例（每个 worker 独立持有，避免线程间阻塞）"""
+    from cnocr import CnOcr
+    return CnOcr()
 
 
-def ocr_skill_cards(screen, card_rois):
+def ocr_skill_cards(screen, card_rois, ocr):
     """对 card_rois 列表里每张卡跑 OCR，返回 [(cx, cy, text), ...]
     card_rois: [(x1, y1, x2, y2), ...]，长度 3。坐标基于截图分辨率
+    ocr: cnocr 实例（由调用方提供，避免共享）
     text 为空字符串表示该卡 OCR 失败
     """
-    ocr = _get_ocr()
     results = []
     for x1, y1, x2, y2 in card_rois:
         crop = screen[y1:y2, x1:x2]
@@ -154,20 +152,19 @@ def ocr_skill_cards(screen, card_rois):
     return results
 
 
-def read_stamina(screen, roi):
+def read_stamina(screen, roi, ocr):
     """OCR 左上角体力数字（如 "30/31"），返回 (current, max)；失败返回 (None, None)。
     roi: (x1, y1, x2, y2)
+    ocr: cnocr 实例（由调用方提供）
     """
     import re
     x1, y1, x2, y2 = roi
     crop = screen[y1:y2, x1:x2]
     try:
-        ocr = _get_ocr()
         lines = ocr.ocr(crop)
         text = "".join(line["text"] for line in lines)
     except Exception:
         return None, None
-    # 文本里抓 "数字/数字" 模式
     m = re.search(r"(\d+)\s*/\s*(\d+)", text)
     if m:
         return int(m.group(1)), int(m.group(2))
