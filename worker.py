@@ -7,6 +7,19 @@ import os
 import sys
 import time
 import cv2
+import numpy as np
+
+
+def _imwrite_unicode(path, img):
+    """cv2.imwrite 在 Windows 下不支持中文路径会静默失败；用 imencode + tofile 绕过"""
+    try:
+        ok, buf = cv2.imencode(".png", img)
+        if ok:
+            buf.tofile(path)
+            return True
+    except Exception:
+        pass
+    return False
 
 from config import (
     GameState, LOOP_INTERVAL, BATTLE_WAIT, ENTER_WAIT,
@@ -54,7 +67,8 @@ class Worker:
             return
         self.step_count += 1
         path = os.path.join(self.debug_dir, f"step_{self.step_count:04d}{suffix}.png")
-        cv2.imwrite(path, screen)
+        if not _imwrite_unicode(path, screen):
+            self.log(f"截图保存失败: {path}")
 
     def _sleep(self, sec):
         """可中断 sleep：每 100ms 检查 self.running"""

@@ -128,15 +128,15 @@ class App:
         self.log_text.pack(fill="both", expand=True)
 
     def _restore_from_settings(self):
-        """从 settings 恢复 adb 路径 / 优先级 / debug / 上次勾选过的 serial"""
+        """从 settings 恢复 adb 路径 / 优先级 / 上次勾选过的 serial。
+        debug 不持久化——避免旧 settings.json 里的 False 覆盖代码默认 True。
+        """
         if "adb_path" in self.settings:
             self.adb_var.set(self.settings["adb_path"])
         if "priority" in self.settings:
             p = self.settings["priority"]
             if isinstance(p, list) and p:
                 self.priority_var.set(", ".join(p))
-        if "debug" in self.settings:
-            self.debug_var.set(bool(self.settings["debug"]))
         # 上次勾选过的 serial：以"手动加入"方式预填，用户不扫描也能直接开始
         last_serials = self.settings.get("serials", [])
         for s in last_serials:
@@ -148,11 +148,10 @@ class App:
                 ).pack(fill="x", padx=15)
 
     def _save_settings(self):
-        """把当前 GUI 状态存到 settings.json"""
+        """把当前 GUI 状态存到 settings.json（不存 debug，让代码默认值生效）"""
         settings.save({
             "adb_path": self.adb_var.get().strip(),
             "priority": [s.strip() for s in self.priority_var.get().split(",") if s.strip()],
-            "debug": self.debug_var.get(),
             "serials": self._selected_serials(),
         })
 
