@@ -1,7 +1,7 @@
 """
 多实例协调器
-- 启动前 adb start-server + 检查每个端口在线
-- 每个端口起一个 Worker daemon 线程
+- 启动前 adb start-server + 检查每个 serial 在线
+- 每个 serial 起一个 Worker daemon 线程
 - 统一处理 stop
 """
 import threading
@@ -11,9 +11,10 @@ from worker import Worker
 
 
 class BotManager:
-    def __init__(self, adb_path, ports, skill_priority, log_fn, debug=False):
+    def __init__(self, adb_path, serials, skill_priority, log_fn, debug=False):
         self.adb_path = adb_path
-        self.ports = list(ports)
+        # 保留 serials 字段名；接受任意格式（127.0.0.1:16384 / emulator-5554 / 313d4194）
+        self.serials = list(serials)
         self.skill_priority = list(skill_priority)
         self.log_fn = log_fn
         self.debug = debug
@@ -24,7 +25,7 @@ class BotManager:
         self.log_fn(f"[manager] {msg}")
 
     def start(self):
-        """启动所有 worker。返回成功启动的端口列表"""
+        """启动所有 worker。返回成功启动的 serial 列表"""
         try:
             start_server(self.adb_path)
         except AdbError as e:
@@ -39,10 +40,12 @@ class BotManager:
 
         self._log(f"在线设备: {sorted(online)}")
         started = []
-        for port in self.ports:
-            serial = port if ":" in str(port) else f"127.0.0.1:{port}"
+        for serial in self.serials:
+            serial = str(serial).strip()
+            if not serial:
+                continue
             if serial not in online:
-                self._log(f"跳过离线端口: {serial}")
+                self._log(f"跳过离线设备: {serial}")
                 continue
             client = AdbClient(self.adb_path, serial)
             worker = Worker(

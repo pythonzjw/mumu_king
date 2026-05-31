@@ -1,7 +1,8 @@
 """
 入口
 - 默认 GUI
-- --nogui 命令行模式：python main.py --nogui --ports=16384,16416 --priority="A,B" --debug
+- --nogui 命令行模式：python main.py --nogui --serials=127.0.0.1:16384,emulator-5554 --priority="A,B" --debug
+  也兼容老的 --ports=16384,16416（自动拼成 127.0.0.1:16384）
 """
 import sys
 import time
@@ -12,7 +13,7 @@ from config import ADB_PATH, DEFAULT_SKILL_PRIORITY
 def _parse_args():
     args = {
         "nogui": False,
-        "ports": [],
+        "serials": [],
         "priority": list(DEFAULT_SKILL_PRIORITY),
         "debug": False,
         "adb": ADB_PATH,
@@ -22,9 +23,12 @@ def _parse_args():
             args["nogui"] = True
         elif a == "--debug":
             args["debug"] = True
+        elif a.startswith("--serials="):
+            args["serials"] = [s.strip() for s in a.split("=", 1)[1].split(",") if s.strip()]
         elif a.startswith("--ports="):
+            # 兼容：纯数字端口拼成 127.0.0.1:port
             ports = [s.strip() for s in a.split("=", 1)[1].split(",") if s.strip()]
-            args["ports"] = [p if ":" in p else f"127.0.0.1:{p}" for p in ports]
+            args["serials"] = [p if ":" in p or p.startswith("emulator-") else f"127.0.0.1:{p}" for p in ports]
         elif a.startswith("--priority="):
             text = a.split("=", 1)[1]
             args["priority"] = [s.strip() for s in text.split(",") if s.strip()]
@@ -34,8 +38,8 @@ def _parse_args():
 
 
 def run_nogui(args):
-    if not args["ports"]:
-        print("--nogui 模式必须指定 --ports=端口1,端口2,...")
+    if not args["serials"]:
+        print("--nogui 模式必须指定 --serials=设备1,设备2,... （或 --ports=...）")
         sys.exit(1)
 
     from manager import BotManager
@@ -45,7 +49,7 @@ def run_nogui(args):
 
     manager = BotManager(
         adb_path=args["adb"],
-        ports=args["ports"],
+        serials=args["serials"],
         skill_priority=args["priority"],
         log_fn=log_fn,
         debug=args["debug"],
