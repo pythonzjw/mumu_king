@@ -125,8 +125,71 @@ def find_settle_button(screen):
 # 改为工厂函数，每个 worker 自己 make_ocr() 持有独立实例
 
 
+def _ensure_directml_priority():
+    """让 cnocr 优先用 DirectML（GPU）provider。cnocr 默认 get_default_ort_providers
+    只识别 CUDA + CPU；如果装了 onnxruntime-directml，把 DmlExecutionProvider 加最前面。
+    需要 patch 多个模块的本地副本（recognizer / ppocr.utility / detector），
+    因为它们都已 from .utils import get_default_ort_providers 取走了原引用。
+    幂等，多 worker 安全。
+    """
+    try:
+        import onnxruntime as ort
+        from cnocr import utils as cnocr_utils
+
+        if getattr(cnocr_utils, "_dml_patched", False):
+            return
+        available = ort.get_available_providers()
+
+        def patched():
+            providers = []
+            if "DmlExecutionProvider" in available:
+                providers.append("DmlExecutionProvider")  # GPU 优先
+            if "CUDAExecutionProvider" in available:
+                providers.append("CUDAExecutionProvider")
+            if "CPUExecutionProvider" in available:
+                providers.append("CPUExecutionProvider")
+            if not providers:
+                providers = available
+            return providers
+
+        # patch 源头
+        cnocr_utils.get_default_ort_providers = patched
+        # patch 已 from .utils import 取走的各副本
+        for modname in ("cnocr.recognizer", "cnocr.ppocr.utility"):
+            try:
+                import importlib
+                m = importlib.import_module(modname)
+                if hasattr(m, "get_default_ort_providers"):
+                    m.get_default_ort_providers = patched
+            except Exception:
+                pass
+        # cnstd 也吃这一套；如果装了
+        try:
+            from cnstd import utils as cnstd_utils
+            if hasattr(cnstd_utils, "get_default_ort_providers"):
+                cnstd_utils.get_default_ort_providers = patched
+            for modname in ("cnstd.ppocr.utility", "cnstd.yolov7.consts"):
+                try:
+                    import importlib
+                    m = importlib.import_module(modname)
+                    if hasattr(m, "get_default_ort_providers"):
+                        m.get_default_ort_providers = patched
+                except Exception:
+                    pass
+        except ImportError:
+            pass
+
+        cnocr_utils._dml_patched = True
+    except Exception:
+        # 任何失败静默回退到 cnocr 默认行为（CPU）
+        pass
+
+
 def make_ocr():
-    """新建一个 cnocr 实例（每个 worker 独立持有，避免线程间阻塞）"""
+    """新建一个 cnocr 实例（每个 worker 独立持有，避免线程间阻塞）。
+    自动启用 DirectML GPU 加速（如装了 onnxruntime-directml）。
+    """
+    _ensure_directml_priority()
     from cnocr import CnOcr
     return CnOcr()
 

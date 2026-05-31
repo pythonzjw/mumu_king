@@ -22,7 +22,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pyinstaller opencv-python numpy Pillow cnocr onnxruntime
+          pip install pyinstaller opencv-python numpy Pillow cnocr
+          # DirectML 版 onnxruntime：在 NVIDIA / AMD / Intel GPU 上自动加速
+          # 必须放在 cnocr 之后，覆盖默认 CPU 版 onnxruntime
+          pip install onnxruntime-directml --force-reinstall
 
       - name: Pre-download cnocr models
         shell: pwsh
@@ -38,6 +41,7 @@ jobs:
             --add-data "$env:APPDATA\cnstd;cnstd" `
             --hidden-import cnocr --hidden-import onnxruntime `
             --collect-data cnocr --collect-data cnstd --collect-all rapidocr `
+            --collect-all onnxruntime `
             main.py
 
       - name: Upload to Release
