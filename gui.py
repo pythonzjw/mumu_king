@@ -161,10 +161,51 @@ class App:
                 self.root.after(0, lambda: self.scan_status.config(
                     text=f"扫描失败: {e}", fg="red"))
                 return
-            self._append_log(f"[scan] 扫到 {len(serials)} 个设备: {serials}")
-            self.root.after(0, lambda: self._render_devices(serials))
+            self._append_log(f"[scan] 扫到 {len(serials)} 个原始设备: {serials}")
+
+            # 同一物理设备可能以多个 serial 出现（如 MuMu 同时绑 16384 和 7555）
+            # 用 ro.serialno 等硬件属性合并，每组留一个最优 serial（优先 MuMu 16384 槽位）
+            from adb import get_device_id
+            merged = self._merge_duplicate_serials(adb_path, serials, get_device_id)
+            if len(merged) != len(serials):
+                self._append_log(f"[scan] 合并后 {len(merged)} 个唯一设备: {merged}")
+            self.root.after(0, lambda: self._render_devices(merged))
 
         threading.Thread(target=_do, daemon=True).start()
+
+    def _merge_duplicate_serials(self, adb_path, serials, get_id_fn):
+        """同一硬件设备多 serial → 留一个最优。优先级：MuMu 16xxx > 7555 > emulator-* > 其他"""
+        def priority(s):
+            # 数字越小越优先
+            cat, _, _ = classify_serial(s)
+            if cat == "mumu":
+                m = _RE_LOOPBACK.match(s)
+                if m:
+                    port = int(m.group(1))
+                    return (0, -port)  # 高端口（16xxx）优先
+                return (1, 0)
+            if cat == "emulator":
+                return (2, 0)
+            return (3, 0)
+
+        groups = {}  # device_id → [serial,...]
+        unknowns = []  # 拿不到 device_id 的（保留原样不合并）
+        for s in serials:
+            did = get_id_fn(adb_path, s)
+            if did:
+                groups.setdefault(did, []).append(s)
+            else:
+                unknowns.append(s)
+
+        result = []
+        for did, ss in groups.items():
+            ss.sort(key=priority)
+            best = ss[0]
+            result.append(best)
+            if len(ss) > 1:
+                self._append_log(f"[scan] 合并 {ss} → 保留 {best}（设备 ID: {did[:20]}）")
+        result.extend(unknowns)
+        return result
 
     def _render_devices(self, serials):
         """渲染设备列表（三组 checkbox）。保留旧的勾选状态"""

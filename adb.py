@@ -110,6 +110,24 @@ def connect(adb_path, host_port):
         return False
 
 
+def get_device_id(adb_path, serial):
+    """用 adb -s serial shell getprop 拿设备真实硬件 ID（用于合并指向同一设备的多个 serial）。
+    依次试 ro.serialno / ro.boot.serialno / ro.product.cpu.abi+ro.build.fingerprint，都拿不到返回 ""。
+    """
+    for prop in ("ro.serialno", "ro.boot.serialno", "ro.build.fingerprint"):
+        try:
+            proc = subprocess.run(
+                [adb_path, "-s", serial, "shell", "getprop", prop],
+                capture_output=True, timeout=3, text=True,
+            )
+            val = (proc.stdout or "").strip()
+            if val:
+                return val
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return ""
+    return ""
+
+
 def list_devices(adb_path):
     """返回 adb devices 列表中所有 'device' 状态的 serial"""
     try:
