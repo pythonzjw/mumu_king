@@ -10,6 +10,8 @@ import cv2
 from config import (
     GameState, LOOP_INTERVAL, BATTLE_WAIT, ENTER_WAIT,
     SETTLE_WAIT, SKILL_SELECT_DELAY, SKILL_CARD_ROIS,
+    CHEST_POSITIONS, CHEST_WAIT, REWARD_OUTSIDE,
+    SWIPE_LEFT_FROM, SWIPE_LEFT_TO, SWIPE_LEFT_DURATION_MS,
 )
 from adb import AdbError
 from recognizer import (
@@ -29,6 +31,8 @@ class Worker:
         self.unknown_count = 0
         self.max_unknown = 20
         self.step_count = 0
+        # 完美通关页已点的宝箱数（0~3）；点完 3 个后左滑回原页面，重置为 0
+        self.chests_clicked = 0
         if self.debug:
             self.debug_dir = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)),
@@ -74,6 +78,12 @@ class Worker:
                 elif state == GameState.SETTLE:
                     self.unknown_count = 0
                     self._handle_settle(screen)
+                elif state == GameState.PERFECT_CLEAR:
+                    self.unknown_count = 0
+                    self._handle_perfect_clear()
+                elif state == GameState.REWARD_POPUP:
+                    self.unknown_count = 0
+                    self._handle_reward_popup()
                 else:
                     self.unknown_count += 1
                     self.log(f"未知状态 ({self.unknown_count}/{self.max_unknown})")
@@ -133,3 +143,27 @@ class Worker:
         self.log(f"点结算确定 ({pos[0]},{pos[1]})")
         self.adb.tap(pos[0], pos[1])
         self._sleep(SETTLE_WAIT)
+
+    def _handle_perfect_clear(self):
+        """完美通关页：依次点 3 个宝箱（点不亮 1s 内不弹奖励 → 跳下一个）；
+        全部点完后左滑到下一关页面，重置 chests_clicked。
+        REWARD_POPUP 由主循环下一轮自动接管，本函数只负责"点击当前 chest"。"""
+        if self.chests_clicked >= len(CHEST_POSITIONS):
+            self.log(f"3 个宝箱已处理，左滑到下一关 {SWIPE_LEFT_FROM} → {SWIPE_LEFT_TO}")
+            self.adb.swipe(*SWIPE_LEFT_FROM, *SWIPE_LEFT_TO, SWIPE_LEFT_DURATION_MS)
+            self.chests_clicked = 0
+            self._sleep(1.0)
+            return
+        idx = self.chests_clicked
+        cx, cy = CHEST_POSITIONS[idx]
+        self.log(f"点宝箱 {idx + 1}/{len(CHEST_POSITIONS)} ({cx},{cy})")
+        self.adb.tap(cx, cy)
+        self.chests_clicked += 1
+        self._sleep(CHEST_WAIT)
+
+    def _handle_reward_popup(self):
+        """弹了「获得奖励」→ 点弹窗外安全点关闭，下一轮回 PERFECT_CLEAR 继续"""
+        x, y = REWARD_OUTSIDE
+        self.log(f"获得奖励弹窗，点弹窗外 ({x},{y}) 关闭")
+        self.adb.tap(x, y)
+        self._sleep(0.6)

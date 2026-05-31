@@ -34,7 +34,9 @@ class GameState:
     HOME = "HOME"                  # 主页/进入战斗按钮可见
     BATTLE = "BATTLE"              # 战斗进行中
     SKILL_SELECT = "SKILL_SELECT"  # 技能选择弹窗
-    SETTLE = "SETTLE"              # 战斗结算/确定按钮
+    SETTLE = "SETTLE"              # 战斗结算/确定按钮（含失败页）
+    PERFECT_CLEAR = "PERFECT_CLEAR"  # 完美通关页（红色印章 + 三个金边宝箱）
+    REWARD_POPUP = "REWARD_POPUP"  # 点宝箱后弹的「获得奖励」弹窗
     UNKNOWN = "UNKNOWN"
 
 # === 默认技能优先级（substring 匹配，越靠前越优先）===
@@ -51,3 +53,18 @@ SKILL_CARD_ROIS = [
     (420, 645, 660,  1335),  # 中卡
     (755, 645, 995,  1335),  # 右卡
 ]
+
+# === 完美通关页：三个宝箱中心点（按顺序点击）===
+CHEST_POSITIONS = [
+    (295, 990),
+    (525, 990),
+    (755, 990),
+]
+# 点宝箱后等待时间（秒）：1s 内若没出现 REWARD_POPUP 视为该宝箱未点亮，跳下一个
+CHEST_WAIT = 1.0
+# 「获得奖励」弹窗外的安全点击点（顶部账号栏下方空白处，避开 tab 栏与按钮）
+REWARD_OUTSIDE = (540, 400)
+# 完美通关三宝箱处理完后的左滑：从 (x1,y1) 滑到 (x2,y2)，毫秒
+SWIPE_LEFT_FROM = (900, 960)
+SWIPE_LEFT_TO = (180, 960)
+SWIPE_LEFT_DURATION_MS = 400

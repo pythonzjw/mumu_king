@@ -60,6 +60,16 @@ class AdbClient:
             timeout=5,
         )
 
+    def swipe(self, x1, y1, x2, y2, duration_ms=400):
+        """滑动 (x1,y1) → (x2,y2)，duration_ms 毫秒"""
+        self._run(
+            ["-s", self.serial, "shell", "input", "swipe",
+             str(int(x1)), str(int(y1)),
+             str(int(x2)), str(int(y2)),
+             str(int(duration_ms))],
+            timeout=5,
+        )
+
     def is_alive(self):
         """检查 self.serial 是否在 adb devices 列表中且 device 状态"""
         out = self._run(["devices"], timeout=5)
