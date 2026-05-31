@@ -27,6 +27,8 @@ from config import (
     CHEST_POSITIONS, CHEST_WAIT, REWARD_OUTSIDE,
     SWIPE_LEFT_FROM, SWIPE_LEFT_TO, SWIPE_LEFT_DURATION_MS,
     STAMINA_ROI, STAMINA_ZERO_WAIT_SECONDS,
+    TAB_EQUIPMENT, TAB_BATTLE, ONE_KEY_MERGE_BTN, MERGE_BTN,
+    TAB_SWITCH_WAIT, MERGE_DIALOG_WAIT, MERGE_REWARD_WAIT,
 )
 from adb import AdbError
 from recognizer import (
@@ -217,15 +219,47 @@ class Worker:
         self._sleep(0.6)
 
     def _handle_buy_stamina(self):
-        """体力不足弹「购买体力」→ 点空白关闭 → sleep 30 分钟等体力自然恢复
-        点完后下一轮主循环重新识别（理论上回 HOME，但有 30 分钟睡眠不会再触发进入按钮）
+        """体力不足弹「购买体力」→
+        1. 点空白关 → 2. 装备 tab → 3. 一键合成 → 4. 合成弹窗 → 5. 关奖励 → 6. 战斗 tab → 7. sleep 30 分钟
+        每步串行等待，中途出错也不抛异常；30 分钟后主循环重新识别状态自动恢复。
         """
+        # 1. 关「购买体力」弹窗
         x, y = REWARD_OUTSIDE
         self.log(f"购买体力弹窗，点空白 ({x},{y}) 关闭")
         self.adb.tap(x, y)
-        self._sleep(0.6)
+        self._sleep(0.8)
+
+        # 2. 切到装备 tab
+        self.log(f"切到装备 tab {TAB_EQUIPMENT}")
+        self.adb.tap(*TAB_EQUIPMENT)
+        self._sleep(TAB_SWITCH_WAIT)
+
+        # 3. 点「一键合成」按钮
+        self.log(f"点一键合成 {ONE_KEY_MERGE_BTN}")
+        self.adb.tap(*ONE_KEY_MERGE_BTN)
+        self._sleep(MERGE_DIALOG_WAIT)
+
+        # 4. 点合成弹窗里的「合成」按钮（即使弹窗未出现也无妨，点位为空白等同无操作）
+        self.log(f"点合成按钮 {MERGE_BTN}")
+        self.adb.tap(*MERGE_BTN)
+        self._sleep(MERGE_REWARD_WAIT)
+
+        # 5. 弹「获得奖励」→ 点空白关闭（即使没弹也只是点了空白）
+        self.log(f"点空白关合成奖励 {REWARD_OUTSIDE}")
+        self.adb.tap(*REWARD_OUTSIDE)
+        self._sleep(0.8)
+        # 再点一次以防双重弹窗
+        self.adb.tap(*REWARD_OUTSIDE)
+        self._sleep(0.5)
+
+        # 6. 切回战斗 tab
+        self.log(f"切回战斗 tab {TAB_BATTLE}")
+        self.adb.tap(*TAB_BATTLE)
+        self._sleep(TAB_SWITCH_WAIT)
+
+        # 7. sleep 30 分钟等体力恢复
         mins = STAMINA_ZERO_WAIT_SECONDS // 60
-        self.log(f"体力不足，等待 {mins} 分钟后再操作")
+        self.log(f"日常已完成，等待 {mins} 分钟体力恢复")
         self._sleep(STAMINA_ZERO_WAIT_SECONDS)
 
     def _handle_wheel(self):
