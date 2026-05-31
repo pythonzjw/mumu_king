@@ -1,0 +1,55 @@
+name: Build EXE
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller opencv-python numpy Pillow cnocr onnxruntime
+
+      - name: Pre-download cnocr models
+        shell: pwsh
+        run: |
+          python -c "from cnocr import CnOcr; ocr = CnOcr(); import numpy as np; ocr.ocr(np.zeros((50,200,3), dtype='uint8')); print('models ready')"
+
+      - name: Build EXE
+        shell: pwsh
+        run: |
+          pyinstaller --onefile --noconsole --name mumu_king `
+            --add-data "templates;templates" `
+            --add-data "$env:APPDATA\cnocr;cnocr" `
+            --add-data "$env:APPDATA\cnstd;cnstd" `
+            --hidden-import cnocr --hidden-import onnxruntime `
+            --collect-data cnocr --collect-data cnstd `
+            main.py
+
+      - name: Upload artifact (for branch builds)
+        if: startsWith(github.ref, 'refs/tags/') == false
+        uses: actions/upload-artifact@v4
+        with:
+          name: mumu_king
+          path: dist/mumu_king.exe
+
+      - name: Upload to Release (for tag builds)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/mumu_king.exe
