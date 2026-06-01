@@ -34,6 +34,7 @@ from config import (
     SHOP_SWIPE_UP_FROM, SHOP_SWIPE_UP_TO, SHOP_SWIPE_DURATION_MS,
     SHOP_MAX_SWIPE, SHOP_KEYWORD_FREE, SHOP_AD_BLOCKLIST,
     SHOP_AFTER_TAP_WAIT, SHOP_REWARD_CLOSE_WAIT,
+    SHOP_CONFIRM_KW, SHOP_CONFIRM_ROI, SHOP_CONFIRM_POLL,
     CASTLE_ENTER_WAIT, CASTLE_GET_SCROLL_ROI, CASTLE_GET_SCROLL_KW,
     CASTLE_MIYAN_BTN_ROI, CASTLE_MIYAN_BTN_KW,
     CASTLE_CONTINUE_HINT_ROI, CASTLE_CONTINUE_HINT, CASTLE_CONTINUE_POLL,
@@ -369,11 +370,8 @@ class Worker:
                 self._watch_ad()
                 self._sleep(ADS_AFTER_CLOSE_WAIT)
 
-            # 关「获得奖励/确定」弹窗（点 2 次空白冗余）
-            self.adb.tap(*REWARD_OUTSIDE)
-            self._sleep(SHOP_REWARD_CLOSE_WAIT)
-            self.adb.tap(*REWARD_OUTSIDE)
-            self._sleep(0.4)
+            # 关「获得奖励」礼包弹窗：必须点中间的「确定」按钮，点空白无效
+            self._dismiss_shop_reward()
         else:
             self.log(f"[商店] 达到上滑上限 {SHOP_MAX_SWIPE} 轮，结束")
 
@@ -381,6 +379,32 @@ class Worker:
         self.adb.tap(*TAB_BATTLE)
         self._sleep(TAB_SWITCH_WAIT)
         self.log("=== 商店日常结束 ===")
+
+    def _dismiss_shop_reward(self):
+        """关商店免费抽完弹的「获得奖励」礼包弹窗：OCR 找「确定」按钮点击
+        礼包样式弹窗点空白无效，必须点中按钮；最多轮询 SHOP_CONFIRM_POLL 次
+        找不到兜底点空白 + 屏幕中心，最大限度避免卡死
+        """
+        for _ in range(SHOP_CONFIRM_POLL):
+            if not self.running:
+                return
+            try:
+                screen = self.adb.screencap()
+            except AdbError:
+                return
+            hits = ocr_find_text(screen, SHOP_CONFIRM_KW, SHOP_CONFIRM_ROI, self.ocr)
+            if hits:
+                cx, cy, text = hits[0]
+                self.log(f"[商店] 点「{text.strip()}」({cx},{cy})")
+                self.adb.tap(cx, cy)
+                self._sleep(SHOP_REWARD_CLOSE_WAIT)
+                return
+            self._sleep(0.5)
+        self.log("[商店] 未找到「确定」按钮，兜底点屏幕中心 + 空白")
+        self.adb.tap(*SCREEN_CENTER)
+        self._sleep(0.5)
+        self.adb.tap(*REWARD_OUTSIDE)
+        self._sleep(0.5)
 
     def _do_castle_daily(self):
         """城堡红点日常：切城堡 → 获取秘卷（看广告）→ 关奖励 → 秘研 → 点屏幕继续 → 切回战斗"""

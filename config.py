@@ -142,6 +142,10 @@ SHOP_AD_BLOCKLIST       = ("立即下载", "下载详情", "安装")
 SHOP_AFTER_TAP_WAIT     = 1.5
 # 关「获得奖励/确定」弹窗时点空白的等待
 SHOP_REWARD_CLOSE_WAIT  = 0.6
+# 商店免费抽完，弹「获得奖励」礼包样式弹窗，必须点中间的「确定」按钮才能关
+SHOP_CONFIRM_KW         = "确定"
+SHOP_CONFIRM_ROI        = (250, 1100, 830, 1400)   # 屏幕中下区域，「确定」按钮常出现位置
+SHOP_CONFIRM_POLL       = 6                          # 每次 0.5s 轮询，最多 3s 等弹窗出现
 
 # === 城堡日常 ===
 CASTLE_ENTER_WAIT        = 1.5
