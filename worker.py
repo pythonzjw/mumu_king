@@ -41,6 +41,8 @@ from config import (
     SCREEN_CENTER,
     ADS_SKIP_ROI, ADS_KEYWORDS, ADS_FALLBACK_TAP,
     ADS_TIMEOUT_SEC, ADS_POLL_INTERVAL, ADS_AFTER_CLOSE_WAIT,
+    UNKNOWN_RESCUE_OCR_AT, UNKNOWN_RESCUE_TAB_DELTA,
+    UNKNOWN_RESCUE_KEYWORDS, UNKNOWN_RESCUE_ROI,
 )
 from adb import AdbError
 from recognizer import (
@@ -133,17 +135,7 @@ class Worker:
                     self._handle_wheel()
                 else:
                     self.unknown_count += 1
-                    # UNKNOWN 时输出各模板得分 + 强制存截图（带 _unknown 后缀）方便诊断
-                    if self.unknown_count <= 3 or self.unknown_count % 10 == 0:
-                        scores = all_template_scores(screen)
-                        score_text = " ".join(f"{k}={v:.2f}" for k, v in scores.items())
-                        self.log(f"未知状态 ({self.unknown_count}/{self.max_unknown}) 得分: {score_text}")
-                        # 即使没勾 debug 也强制存第 1 张 UNKNOWN 截图（用于诊断）
-                        if self.debug:
-                            self._save_debug(screen, "_unknown")
-                    if self.unknown_count >= self.max_unknown:
-                        self.log("连续未知过多，重置计数继续")
-                        self.unknown_count = 0
+                    self._handle_unknown(screen)
 
                 self._sleep(LOOP_INTERVAL)
 
@@ -473,6 +465,47 @@ class Worker:
         self.adb.tap(*TAB_BATTLE)
         self._sleep(TAB_SWITCH_WAIT)
         self.log("=== 城堡日常结束 ===")
+
+    def _handle_unknown(self, screen):
+        """连续 UNKNOWN 时主动脱困，避免脚本卡死在未识别的运营/礼包弹窗
+        - 1~2 次：仅打印日志（瞬时画面不介入）
+        - 3 次：OCR 找「确定/关闭/取消...」按钮点击，关弹窗
+        - 6 次：还 UNKNOWN，点战斗 tab 强行回首页
+        - 20 次：重置 count 重来一轮
+        脱困后不重置 count，让下一轮主循环自然 detect_state 验证；
+        若成功画面变 HOME/BATTLE 等，对应分支会清零 count
+        """
+        # 日志：第 1~3 次和每 10 次打印模板得分
+        if self.unknown_count <= 3 or self.unknown_count % 10 == 0:
+            scores = all_template_scores(screen)
+            score_text = " ".join(f"{k}={v:.2f}" for k, v in scores.items())
+            self.log(f"未知状态 ({self.unknown_count}/{self.max_unknown}) 得分: {score_text}")
+            if self.debug:
+                self._save_debug(screen, "_unknown")
+
+        # 阶段 1：OCR 找按钮脱困
+        if self.unknown_count == UNKNOWN_RESCUE_OCR_AT:
+            for kw in UNKNOWN_RESCUE_KEYWORDS:
+                hits = ocr_find_text(screen, kw, UNKNOWN_RESCUE_ROI, self.ocr)
+                if hits:
+                    cx, cy, text = hits[0]
+                    self.log(f"[脱困] OCR 找到「{text.strip()}」({cx},{cy})，点击尝试关弹窗")
+                    self.adb.tap(cx, cy)
+                    self._sleep(1.0)
+                    return
+            self.log("[脱困] OCR 未找到任何关闭关键字")
+
+        # 阶段 2：仍 UNKNOWN，切战斗 tab 强行回首页
+        if self.unknown_count == UNKNOWN_RESCUE_OCR_AT + UNKNOWN_RESCUE_TAB_DELTA:
+            self.log(f"[脱困] 仍 UNKNOWN，点战斗 tab {TAB_BATTLE} 强行回首页")
+            self.adb.tap(*TAB_BATTLE)
+            self._sleep(TAB_SWITCH_WAIT)
+            return
+
+        # 阶段 3：达上限重置（与原逻辑一致）
+        if self.unknown_count >= self.max_unknown:
+            self.log("连续未知过多，重置计数继续")
+            self.unknown_count = 0
 
     def _watch_ad(self, timeout=ADS_TIMEOUT_SEC):
         """看广告子流程：右上角小 ROI 持续 OCR 等「跳过/关闭/X」关键字出现 → 点对应位置

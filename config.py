@@ -171,3 +171,13 @@ ADS_FALLBACK_TAP     = (950, 180)
 ADS_TIMEOUT_SEC      = 60
 ADS_POLL_INTERVAL    = 1.0
 ADS_AFTER_CLOSE_WAIT = 1.5
+
+# === UNKNOWN 主动脱困 ===
+# 连续 UNKNOWN 多少次后开始 OCR 找按钮脱困
+UNKNOWN_RESCUE_OCR_AT    = 3
+# 再过多少次（OCR_AT + TAB_DELTA）后点战斗 tab 强行回首页
+UNKNOWN_RESCUE_TAB_DELTA = 3
+# OCR 脱困关键字（按优先级，从最稳到最激进）
+UNKNOWN_RESCUE_KEYWORDS  = ("确定", "关闭", "取消", "我知道了", "返回", "跳过")
+# 脱困 OCR 扫描区：避顶部账号栏 & 底部 tab，覆盖中间所有按钮可能出现位置
+UNKNOWN_RESCUE_ROI       = (0, 180, 1080, 1750)
