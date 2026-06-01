@@ -27,14 +27,26 @@ from config import (
     CHEST_POSITIONS, CHEST_WAIT, REWARD_OUTSIDE,
     SWIPE_LEFT_FROM, SWIPE_LEFT_TO, SWIPE_LEFT_DURATION_MS,
     STAMINA_ROI, STAMINA_ZERO_WAIT_SECONDS,
-    TAB_EQUIPMENT, TAB_BATTLE, ONE_KEY_MERGE_BTN, MERGE_BTN,
+    TAB_SHOP, TAB_EQUIPMENT, TAB_BATTLE, TAB_CASTLE,
+    ONE_KEY_MERGE_BTN, MERGE_BTN,
     TAB_SWITCH_WAIT, MERGE_DIALOG_WAIT, MERGE_REWARD_WAIT,
+    SHOP_ENTER_WAIT, SHOP_OCR_ROI,
+    SHOP_SWIPE_UP_FROM, SHOP_SWIPE_UP_TO, SHOP_SWIPE_DURATION_MS,
+    SHOP_MAX_SWIPE, SHOP_KEYWORD_FREE, SHOP_AD_BLOCKLIST,
+    SHOP_AFTER_TAP_WAIT, SHOP_REWARD_CLOSE_WAIT,
+    CASTLE_ENTER_WAIT, CASTLE_GET_SCROLL_ROI, CASTLE_GET_SCROLL_KW,
+    CASTLE_MIYAN_BTN_ROI, CASTLE_MIYAN_BTN_KW,
+    CASTLE_CONTINUE_HINT_ROI, CASTLE_CONTINUE_HINT, CASTLE_CONTINUE_POLL,
+    SCREEN_CENTER,
+    ADS_SKIP_ROI, ADS_KEYWORDS, ADS_FALLBACK_TAP,
+    ADS_TIMEOUT_SEC, ADS_POLL_INTERVAL, ADS_AFTER_CLOSE_WAIT,
 )
 from adb import AdbError
 from recognizer import (
     detect_state, find_enter_button, find_settle_button,
     ocr_skill_cards, pick_skill_by_priority, read_stamina,
     all_template_scores, make_ocr, RecognizeError,
+    detect_redot_tabs, ocr_find_text, is_in_shop_page,
 )
 
 
@@ -158,6 +170,9 @@ class Worker:
                 self.log(f"体力为 0，等待 {mins} 分钟后再检测")
                 self._sleep(STAMINA_ZERO_WAIT_SECONDS)
                 return
+        # 体力够再看红点：有红点就先做日常，本轮不点进入
+        if self._check_and_do_daily(screen):
+            return
         pos = find_enter_button(screen)
         if pos is None:
             self.log("未定位进入按钮")
@@ -219,47 +234,15 @@ class Worker:
         self._sleep(0.6)
 
     def _handle_buy_stamina(self):
-        """体力不足弹「购买体力」→
-        1. 点空白关 → 2. 装备 tab → 3. 一键合成 → 4. 合成弹窗 → 5. 关奖励 → 6. 战斗 tab → 7. sleep 30 分钟
-        每步串行等待，中途出错也不抛异常；30 分钟后主循环重新识别状态自动恢复。
+        """体力不足弹「购买体力」→ 关弹窗 → sleep 30 分钟等体力恢复
+        合成已下沉到「装备 tab 红点日常」，本函数不再触发合成
         """
-        # 1. 关「购买体力」弹窗
         x, y = REWARD_OUTSIDE
         self.log(f"购买体力弹窗，点空白 ({x},{y}) 关闭")
         self.adb.tap(x, y)
         self._sleep(0.8)
-
-        # 2. 切到装备 tab
-        self.log(f"切到装备 tab {TAB_EQUIPMENT}")
-        self.adb.tap(*TAB_EQUIPMENT)
-        self._sleep(TAB_SWITCH_WAIT)
-
-        # 3. 点「一键合成」按钮
-        self.log(f"点一键合成 {ONE_KEY_MERGE_BTN}")
-        self.adb.tap(*ONE_KEY_MERGE_BTN)
-        self._sleep(MERGE_DIALOG_WAIT)
-
-        # 4. 点合成弹窗里的「合成」按钮（即使弹窗未出现也无妨，点位为空白等同无操作）
-        self.log(f"点合成按钮 {MERGE_BTN}")
-        self.adb.tap(*MERGE_BTN)
-        self._sleep(MERGE_REWARD_WAIT)
-
-        # 5. 弹「获得奖励」→ 点空白关闭（即使没弹也只是点了空白）
-        self.log(f"点空白关合成奖励 {REWARD_OUTSIDE}")
-        self.adb.tap(*REWARD_OUTSIDE)
-        self._sleep(0.8)
-        # 再点一次以防双重弹窗
-        self.adb.tap(*REWARD_OUTSIDE)
-        self._sleep(0.5)
-
-        # 6. 切回战斗 tab
-        self.log(f"切回战斗 tab {TAB_BATTLE}")
-        self.adb.tap(*TAB_BATTLE)
-        self._sleep(TAB_SWITCH_WAIT)
-
-        # 7. sleep 30 分钟等体力恢复
         mins = STAMINA_ZERO_WAIT_SECONDS // 60
-        self.log(f"日常已完成，等待 {mins} 分钟体力恢复")
+        self.log(f"等待 {mins} 分钟体力恢复")
         self._sleep(STAMINA_ZERO_WAIT_SECONDS)
 
     def _handle_wheel(self):
@@ -268,3 +251,230 @@ class Worker:
         self.log(f"轮盘弹窗，点空白 ({x},{y}) 关闭")
         self.adb.tap(x, y)
         self._sleep(0.6)
+
+    # === 红点日常 ===
+
+    def _check_and_do_daily(self, screen):
+        """识别底部 tab 红点，命中就执行对应日常；一次只做一项以便尽快回 HOME 重检
+        返回 True 表示本轮做了日常（调用方不要再点进入按钮）
+        """
+        try:
+            tabs = detect_redot_tabs(screen)
+        except RecognizeError as e:
+            self.log(f"红点模板缺失: {e}")
+            return False
+        if not tabs:
+            return False
+        self.log(f"检测到红点 tab: {sorted(tabs)}")
+        if "SHOP" in tabs:
+            self._do_shop_daily()
+            return True
+        if "EQUIPMENT" in tabs:
+            self._do_equipment_daily()
+            return True
+        if "CASTLE" in tabs:
+            self._do_castle_daily()
+            return True
+        return False
+
+    def _do_one_key_merge(self):
+        """前提：已在装备 tab。点一键合成 → 点合成弹窗 → 关 2 次奖励
+        不切 tab，由调用方负责切入/切回
+        """
+        self.log(f"点一键合成 {ONE_KEY_MERGE_BTN}")
+        self.adb.tap(*ONE_KEY_MERGE_BTN)
+        self._sleep(MERGE_DIALOG_WAIT)
+        self.log(f"点合成按钮 {MERGE_BTN}")
+        self.adb.tap(*MERGE_BTN)
+        self._sleep(MERGE_REWARD_WAIT)
+        self.log(f"点空白关合成奖励 {REWARD_OUTSIDE}")
+        self.adb.tap(*REWARD_OUTSIDE)
+        self._sleep(0.8)
+        self.adb.tap(*REWARD_OUTSIDE)
+        self._sleep(0.5)
+
+    def _do_equipment_daily(self):
+        """装备 tab 红点日常：切装备 → 一键合成 → 切回战斗"""
+        self.log("=== 装备日常开始 ===")
+        self.adb.tap(*TAB_EQUIPMENT)
+        self._sleep(TAB_SWITCH_WAIT)
+        self._do_one_key_merge()
+        self.log(f"切回战斗 tab {TAB_BATTLE}")
+        self.adb.tap(*TAB_BATTLE)
+        self._sleep(TAB_SWITCH_WAIT)
+        self.log("=== 装备日常结束 ===")
+
+    def _do_shop_daily(self):
+        """商店红点日常：扫描全屏「免费」按钮 → 点 → 看广告 → 关奖励 → 上滑 → 重复
+        直到上滑后无新「免费」或达到 SHOP_MAX_SWIPE 上限
+        """
+        self.log("=== 商店日常开始 ===")
+        self.adb.tap(*TAB_SHOP)
+        self._sleep(SHOP_ENTER_WAIT)
+
+        clicked = set()  # 用 40px 网格哈希去重，避免同一按钮被反复点
+        for round_idx in range(SHOP_MAX_SWIPE):
+            if not self.running:
+                break
+            try:
+                screen = self.adb.screencap()
+            except AdbError as e:
+                self.log(f"商店截图失败: {e}")
+                break
+            if not is_in_shop_page(screen, self.ocr):
+                self.log("已不在商店页（可能误入广告），结束商店日常")
+                break
+
+            hits = ocr_find_text(
+                screen, SHOP_KEYWORD_FREE, SHOP_OCR_ROI, self.ocr,
+                blocklist=SHOP_AD_BLOCKLIST,
+            )
+            new_hits = [h for h in hits if (h[0] // 40, h[1] // 40) not in clicked]
+
+            if not new_hits:
+                # 本屏没新「免费」→ 试上滑找下一屏
+                self.log(f"[商店] 第 {round_idx+1} 轮本屏无新「免费」，上滑")
+                self.adb.swipe(*SHOP_SWIPE_UP_FROM, *SHOP_SWIPE_UP_TO, SHOP_SWIPE_DURATION_MS)
+                self._sleep(1.0)
+                try:
+                    screen2 = self.adb.screencap()
+                except AdbError as e:
+                    self.log(f"商店上滑后截图失败: {e}")
+                    break
+                hits2 = ocr_find_text(
+                    screen2, SHOP_KEYWORD_FREE, SHOP_OCR_ROI, self.ocr,
+                    blocklist=SHOP_AD_BLOCKLIST,
+                )
+                new2 = [h for h in hits2 if (h[0] // 40, h[1] // 40) not in clicked]
+                if not new2:
+                    self.log("[商店] 上滑后仍无新「免费」，全部处理完")
+                    break
+                # 有新的就进入下一轮重新走（这里 continue 让下一轮再 screencap 一次以稳）
+                continue
+
+            cx, cy, text = new_hits[0]
+            self.log(f"[商店] 点「{text.strip()}」({cx},{cy})")
+            self.adb.tap(cx, cy)
+            clicked.add((cx // 40, cy // 40))
+            self._sleep(SHOP_AFTER_TAP_WAIT)
+
+            # 点完判断是否进了广告
+            try:
+                screen3 = self.adb.screencap()
+            except AdbError as e:
+                self.log(f"商店点击后截图失败: {e}")
+                continue
+            if not is_in_shop_page(screen3, self.ocr):
+                self.log("[商店] 进入广告，等待跳过/关闭")
+                self._watch_ad()
+                self._sleep(ADS_AFTER_CLOSE_WAIT)
+
+            # 关「获得奖励/确定」弹窗（点 2 次空白冗余）
+            self.adb.tap(*REWARD_OUTSIDE)
+            self._sleep(SHOP_REWARD_CLOSE_WAIT)
+            self.adb.tap(*REWARD_OUTSIDE)
+            self._sleep(0.4)
+        else:
+            self.log(f"[商店] 达到上滑上限 {SHOP_MAX_SWIPE} 轮，结束")
+
+        self.log(f"切回战斗 tab {TAB_BATTLE}")
+        self.adb.tap(*TAB_BATTLE)
+        self._sleep(TAB_SWITCH_WAIT)
+        self.log("=== 商店日常结束 ===")
+
+    def _do_castle_daily(self):
+        """城堡红点日常：切城堡 → 获取秘卷（看广告）→ 关奖励 → 秘研 → 点屏幕继续 → 切回战斗"""
+        self.log("=== 城堡日常开始 ===")
+        self.adb.tap(*TAB_CASTLE)
+        self._sleep(CASTLE_ENTER_WAIT)
+
+        # 1. 找「获取秘卷」按钮，点击进广告
+        try:
+            screen = self.adb.screencap()
+        except AdbError as e:
+            self.log(f"城堡截图失败: {e}")
+            self.adb.tap(*TAB_BATTLE)
+            self._sleep(TAB_SWITCH_WAIT)
+            return
+
+        hits = ocr_find_text(screen, CASTLE_GET_SCROLL_KW, CASTLE_GET_SCROLL_ROI, self.ocr)
+        if hits:
+            cx, cy, text = hits[0]
+            self.log(f"[城堡] 点「{text.strip()}」({cx},{cy})")
+            self.adb.tap(cx, cy)
+            self._sleep(1.2)
+            self._watch_ad()
+            self._sleep(ADS_AFTER_CLOSE_WAIT)
+            # 关可能弹的奖励
+            self.adb.tap(*REWARD_OUTSIDE)
+            self._sleep(0.6)
+        else:
+            self.log("[城堡] 未找到「获取秘卷」按钮，跳过广告环节")
+
+        # 2. 找「秘研」按钮，点击升级
+        try:
+            screen2 = self.adb.screencap()
+        except AdbError as e:
+            self.log(f"城堡秘研前截图失败: {e}")
+            self.adb.tap(*TAB_BATTLE)
+            self._sleep(TAB_SWITCH_WAIT)
+            return
+
+        miyan = ocr_find_text(screen2, CASTLE_MIYAN_BTN_KW, CASTLE_MIYAN_BTN_ROI, self.ocr)
+        if miyan:
+            cx, cy, text = miyan[0]
+            self.log(f"[城堡] 点「{text.strip()}」({cx},{cy})")
+            self.adb.tap(cx, cy)
+            self._sleep(2.0)
+            # 等「点击屏幕继续」，最多 4 秒
+            for _ in range(CASTLE_CONTINUE_POLL):
+                if not self.running:
+                    break
+                try:
+                    s = self.adb.screencap()
+                except AdbError:
+                    break
+                if ocr_find_text(s, CASTLE_CONTINUE_HINT, CASTLE_CONTINUE_HINT_ROI, self.ocr):
+                    self.log(f"[城堡] 检测到「{CASTLE_CONTINUE_HINT}」，点屏幕中心")
+                    self.adb.tap(*SCREEN_CENTER)
+                    self._sleep(0.8)
+                    break
+                self._sleep(0.5)
+            else:
+                self.log("[城堡] 未等到「点击屏幕继续」（可能秘卷不足），放弃")
+        else:
+            self.log("[城堡] 未找到「秘研」按钮")
+
+        self.log(f"切回战斗 tab {TAB_BATTLE}")
+        self.adb.tap(*TAB_BATTLE)
+        self._sleep(TAB_SWITCH_WAIT)
+        self.log("=== 城堡日常结束 ===")
+
+    def _watch_ad(self, timeout=ADS_TIMEOUT_SEC):
+        """看广告子流程：右上角小 ROI 持续 OCR 等「跳过/关闭/X」关键字出现 → 点对应位置
+        超时则点固定坐标兜底；返回 True=找到关键字成功点击，False=超时兜底
+        """
+        deadline = time.time() + timeout
+        while time.time() < deadline and self.running:
+            try:
+                screen = self.adb.screencap()
+            except AdbError as e:
+                self.log(f"广告截图失败: {e}")
+                self._sleep(ADS_POLL_INTERVAL)
+                continue
+            for kw in ADS_KEYWORDS:
+                hits = ocr_find_text(screen, kw, ADS_SKIP_ROI, self.ocr)
+                if hits:
+                    cx, cy, text = hits[0]
+                    self.log(f"[广告] 检测到「{text.strip()}」({cx},{cy})")
+                    self.adb.tap(cx, cy)
+                    self._sleep(1.0)
+                    return True
+            self._sleep(ADS_POLL_INTERVAL)
+        self.log(f"[广告] 超时 {timeout}s，点兜底坐标 {ADS_FALLBACK_TAP}")
+        self.adb.tap(*ADS_FALLBACK_TAP)
+        self._sleep(1.0)
+        # 「跳过」和「关闭」可能是两步弹窗，再补一次
+        self.adb.tap(*ADS_FALLBACK_TAP)
+        self._sleep(1.0)
+        return False

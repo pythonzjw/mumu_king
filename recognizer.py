@@ -11,7 +11,10 @@ from functools import lru_cache
 import cv2
 import numpy as np
 
-from config import TEMPLATES_DIR, MATCH_THRESHOLD, GameState
+from config import (
+    TEMPLATES_DIR, MATCH_THRESHOLD, GameState,
+    REDOT_TPL, REDOT_ROIS, REDOT_MATCH_THRESHOLD,
+)
 
 # OCR 全局锁：多 worker 共用 GPU（DirectML）时同时推理会 native 崩溃
 # 用锁串行化 OCR 调用；GPU 单次推理 ~10ms，3 worker 串行 30ms 几乎无感
@@ -265,3 +268,100 @@ def pick_skill_by_priority(cards, priority):
             if keyword in text:
                 return cx, cy, keyword, text
     return None
+
+
+# === 红点检测 ===
+
+def detect_redot_tabs(screen):
+    """识别底部 3 个 tab 上方是否有红色感叹号，返回命中 tab 名集合
+    返回值为 {"SHOP", "EQUIPMENT", "CASTLE"} 的子集；模板缺失抛 RecognizeError
+    """
+    tpl = _load_template(REDOT_TPL)  # 缺失抛 RecognizeError
+    th, tw = tpl.shape[:2]
+    hits = set()
+    for tab_name, (x1, y1, x2, y2) in REDOT_ROIS.items():
+        # 边界保护：ROI 落到截图外就跳过
+        if x2 > screen.shape[1] or y2 > screen.shape[0]:
+            continue
+        crop = screen[y1:y2, x1:x2]
+        if crop.shape[0] < th or crop.shape[1] < tw:
+            continue
+        res = cv2.matchTemplate(crop, tpl, cv2.TM_CCOEFF_NORMED)
+        _, score, _, _ = cv2.minMaxLoc(res)
+        if score >= REDOT_MATCH_THRESHOLD:
+            hits.add(tab_name)
+    return hits
+
+
+# === 通用 OCR 找文本 ===
+
+def _line_center(line, roi_offset):
+    """从 cnocr 一行结果取中心点 (cx, cy)，加上 ROI 左上角偏移转回全图坐标
+    cnocr line 结构：{"text": str, "score": float, "position": ndarray(4,2)}
+    """
+    try:
+        pos = line.get("position")
+        if pos is None:
+            return None
+        # position 是 4 个点 [(x1,y1),(x2,y1),(x2,y2),(x1,y2)]
+        pos = np.asarray(pos)
+        cx = float(pos[:, 0].mean()) + roi_offset[0]
+        cy = float(pos[:, 1].mean()) + roi_offset[1]
+        return int(cx), int(cy)
+    except Exception:
+        return None
+
+
+def ocr_find_text(screen, keyword, roi, ocr, blocklist=None):
+    """在 roi 内 OCR，找出所有文本包含 keyword 的行
+    - roi: (x1, y1, x2, y2) 全图坐标
+    - blocklist: 若 OCR 整屏文本含 blocklist 任一关键字 → 视为非目标页面，整体返回 []
+    - 返回 [(cx, cy, text), ...]，坐标已加回 roi 偏移；按 cy 升序
+    多 worker 并发 GPU 走 _OCR_LOCK 串行
+    """
+    x1, y1, x2, y2 = roi
+    crop = screen[y1:y2, x1:x2]
+    try:
+        with _OCR_LOCK:
+            lines = ocr.ocr(crop)
+    except Exception:
+        return []
+    if not lines:
+        return []
+
+    # blocklist：整屏文本若含禁忌词则丢弃（防误识广告页里的「免费」）
+    if blocklist:
+        full_text = "".join(line.get("text", "") for line in lines)
+        for bad in blocklist:
+            if bad and bad in full_text:
+                return []
+
+    hits = []
+    for line in lines:
+        text = line.get("text", "")
+        if keyword not in text:
+            continue
+        center = _line_center(line, (x1, y1))
+        if center is None:
+            continue
+        cx, cy = center
+        hits.append((cx, cy, text))
+    hits.sort(key=lambda h: h[1])  # 按 y 升序
+    return hits
+
+
+def is_in_shop_page(screen, ocr):
+    """粗判当前是否还在商店（或类似带底部 tab 栏的游戏内页）。
+    判定：底部 tab 区 OCR 能识别到「战斗」或「商店」字样 → 视为在 tab 页内
+    广告页底部 tab 不可见 → 返回 False
+    """
+    # 底部 tab 栏区域
+    roi = (0, 1750, screen.shape[1], min(screen.shape[0], 1920))
+    crop = screen[roi[1]:roi[3], roi[0]:roi[2]]
+    try:
+        with _OCR_LOCK:
+            lines = ocr.ocr(crop)
+    except Exception:
+        return False
+    text = "".join(line.get("text", "") for line in lines)
+    return ("战斗" in text) or ("商店" in text)
