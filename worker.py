@@ -37,12 +37,14 @@ from config import (
     SHOP_CONFIRM_KW, SHOP_CONFIRM_ROI, SHOP_CONFIRM_POLL,
     CASTLE_ENTER_WAIT, CASTLE_GET_SCROLL_ROI, CASTLE_GET_SCROLL_KW,
     CASTLE_MIYAN_BTN_ROI, CASTLE_MIYAN_BTN_KW,
+    CASTLE_MIYAN_ICON_ROI, CASTLE_POPUP_WAIT,
     CASTLE_CONTINUE_HINT_ROI, CASTLE_CONTINUE_HINT, CASTLE_CONTINUE_POLL,
     SCREEN_CENTER,
     ADS_SKIP_ROI, ADS_KEYWORDS, ADS_FALLBACK_TAP,
     ADS_TIMEOUT_SEC, ADS_POLL_INTERVAL, ADS_AFTER_CLOSE_WAIT,
     UNKNOWN_RESCUE_OCR_AT, UNKNOWN_RESCUE_TAB_DELTA,
     UNKNOWN_RESCUE_KEYWORDS, UNKNOWN_RESCUE_ROI,
+    DEBUG_MAX_STEP_FILES,
 )
 from adb import AdbError
 from recognizer import (
@@ -85,7 +87,8 @@ class Worker:
     def _save_debug(self, screen, suffix=""):
         if not self.debug:
             return
-        self.step_count += 1
+        # 环形覆盖，避免长时间挂 debug 磁盘膨胀
+        self.step_count = (self.step_count + 1) % DEBUG_MAX_STEP_FILES
         path = os.path.join(self.debug_dir, f"step_{self.step_count:04d}{suffix}.png")
         if not _imwrite_unicode(path, screen):
             self.log(f"截图保存失败: {path}")
@@ -305,7 +308,8 @@ class Worker:
         self.adb.tap(*TAB_SHOP)
         self._sleep(SHOP_ENTER_WAIT)
 
-        clicked = set()  # 用 40px 网格哈希去重，避免同一按钮被反复点
+        clicked = set()                # 同一屏内 40px 网格去重；上滑后会清空（新视野）
+        prev_swipe_signature = None    # 上滑后 hits 的网格签名，连续两次相同视为到底
         for round_idx in range(SHOP_MAX_SWIPE):
             if not self.running:
                 break
@@ -325,7 +329,7 @@ class Worker:
             new_hits = [h for h in hits if (h[0] // 40, h[1] // 40) not in clicked]
 
             if not new_hits:
-                # 本屏没新「免费」→ 试上滑找下一屏
+                # 本屏没新「免费」→ 上滑找下一屏 → 清 clicked → 检测到底
                 self.log(f"[商店] 第 {round_idx+1} 轮本屏无新「免费」，上滑")
                 self.adb.swipe(*SHOP_SWIPE_UP_FROM, *SHOP_SWIPE_UP_TO, SHOP_SWIPE_DURATION_MS)
                 self._sleep(1.0)
@@ -338,11 +342,17 @@ class Worker:
                     screen2, SHOP_KEYWORD_FREE, SHOP_OCR_ROI, self.ocr,
                     blocklist=SHOP_AD_BLOCKLIST,
                 )
-                new2 = [h for h in hits2 if (h[0] // 40, h[1] // 40) not in clicked]
-                if not new2:
-                    self.log("[商店] 上滑后仍无新「免费」，全部处理完")
+                # 关键修复：上滑 = 新视野，清空 clicked 重新去重
+                clicked.clear()
+                # 到底检测：本次上滑后的 hits 签名与上次完全相同 → 页面没动 → 停
+                cur_sig = frozenset((h[0] // 40, h[1] // 40) for h in hits2)
+                if cur_sig and cur_sig == prev_swipe_signature:
+                    self.log("[商店] 上滑后 OCR 与上次完全一致，已到底，结束")
                     break
-                # 有新的就进入下一轮重新走（这里 continue 让下一轮再 screencap 一次以稳）
+                prev_swipe_signature = cur_sig
+                if not hits2:
+                    self.log("[商店] 上滑后无任何「免费」，结束")
+                    break
                 continue
 
             cx, cy, text = new_hits[0]
@@ -399,12 +409,35 @@ class Worker:
         self._sleep(0.5)
 
     def _do_castle_daily(self):
-        """城堡红点日常：切城堡 → 获取秘卷（看广告）→ 关奖励 → 秘研 → 点屏幕继续 → 切回战斗"""
+        """城堡红点日常：切城堡 → 点左上「秘研」图标弹操作框 → 获取秘卷（看广告）
+        → 关奖励 → 秘研 → 点屏幕继续 → 切回战斗
+        """
         self.log("=== 城堡日常开始 ===")
         self.adb.tap(*TAB_CASTLE)
         self._sleep(CASTLE_ENTER_WAIT)
 
-        # 1. 找「获取秘卷」按钮，点击进广告
+        # 1a. 先点左上角「秘研」图标，否则不会出现「获取秘卷/秘研」操作框
+        try:
+            entry_screen = self.adb.screencap()
+        except AdbError as e:
+            self.log(f"城堡截图失败: {e}")
+            self.adb.tap(*TAB_BATTLE)
+            self._sleep(TAB_SWITCH_WAIT)
+            return
+        icon_hits = ocr_find_text(
+            entry_screen, CASTLE_MIYAN_BTN_KW, CASTLE_MIYAN_ICON_ROI, self.ocr,
+        )
+        if not icon_hits:
+            self.log("[城堡] 未找到左上「秘研」图标，跳过日常")
+            self.adb.tap(*TAB_BATTLE)
+            self._sleep(TAB_SWITCH_WAIT)
+            return
+        cx, cy, _ = icon_hits[0]
+        self.log(f"[城堡] 点左上「秘研」图标 ({cx},{cy})")
+        self.adb.tap(cx, cy)
+        self._sleep(CASTLE_POPUP_WAIT)
+
+        # 1b. 弹窗里找「获取秘卷」按钮，点击进广告
         try:
             screen = self.adb.screencap()
         except AdbError as e:
