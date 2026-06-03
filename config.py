@@ -44,6 +44,9 @@ LOOP_INTERVAL = 1.0          # 主循环每次截图间隔（从 0.5 调到 1.0 
 BATTLE_WAIT = 2.0            # 战斗中等待
 ENTER_WAIT = 1.5             # 点进入按钮后等加载
 SETTLE_WAIT = 1.0            # 点结算确定后等
+SETTLE_DOUBLE_KW   = "双倍"  # 结算页双倍奖励按钮关键字
+SETTLE_DOUBLE_ROI  = (100, 780, 280, 880)  # 左下双倍按钮搜索区
+SETTLE_DOUBLE_WAIT = 1.0     # 点双倍后等是否进广告
 SKILL_SELECT_DELAY = 0.3     # 技能选择后延迟
 
 # === 图像识别配置 ===
@@ -83,7 +86,7 @@ CHEST_POSITIONS = [
     (263, 495),    # 中宝箱
     (378, 495),    # 右宝箱
 ]
-CHEST_WAIT = 1.0
+CHEST_WAIT = 1.8   # 1.0 → 1.8：等中间宝箱弹奖励的动画延迟，避免下一轮太早跳过
 # 「获得奖励」弹窗外的安全点击点（顶部账号栏下方空白处）
 REWARD_OUTSIDE = (270, 200)
 # 完美通关三宝箱处理完后的左滑：从 (x1,y1) 滑到 (x2,y2)，毫秒

@@ -24,7 +24,8 @@ def _imwrite_unicode(path, img):
 
 from config import (
     GameState, LOOP_INTERVAL, BATTLE_WAIT, ENTER_WAIT,
-    SETTLE_WAIT, SKILL_SELECT_DELAY, SKILL_CARD_ROIS,
+    SETTLE_WAIT, SETTLE_DOUBLE_KW, SETTLE_DOUBLE_ROI, SETTLE_DOUBLE_WAIT,
+    SKILL_SELECT_DELAY, SKILL_CARD_ROIS,
     CHEST_POSITIONS, CHEST_WAIT, REWARD_OUTSIDE,
     SWIPE_LEFT_FROM, SWIPE_LEFT_TO, SWIPE_LEFT_DURATION_MS,
     STAMINA_ROI, STAMINA_ZERO_WAIT_SECONDS,
@@ -53,6 +54,7 @@ from config import (
 from adb import AdbError
 from recognizer import (
     detect_state, find_enter_button, find_settle_button,
+    is_battle_tab_active,
     ocr_skill_cards, pick_skill_by_priority, read_stamina,
     all_template_scores, make_ocr, RecognizeError,
     detect_redot_tabs, ocr_find_text, is_in_shop_page,
@@ -205,7 +207,34 @@ class Worker:
         self._sleep(SKILL_SELECT_DELAY)
 
     def _handle_settle(self, screen):
-        """战斗胜利/失败结算页：找「确定」按钮点击"""
+        """战斗胜利/失败结算页：先尝试「双倍奖励」看广告 → 再点确认"""
+        # 1. 找「双倍」按钮（左下，有次数限制 0/3）
+        db_hits = ocr_find_text(screen, SETTLE_DOUBLE_KW, SETTLE_DOUBLE_ROI, self.ocr)
+        if db_hits:
+            cx, cy, text = db_hits[0]
+            self.log(f"[结算] 点双倍奖励「{text.strip()}」({cx},{cy})")
+            self.adb.tap(cx, cy)
+            self._sleep(SETTLE_DOUBLE_WAIT)
+            # 验证是否真进了广告页（次数用完点了无反应不会进）
+            try:
+                screen2 = self.adb.screencap()
+            except AdbError:
+                screen2 = screen
+            state2 = detect_state(screen2, self.ocr)
+            if state2 == GameState.AD or not is_battle_tab_active(screen2):
+                # 真进广告
+                self.log("[结算] 进入广告，等待关闭")
+                self._watch_ad()
+                self._sleep(ADS_AFTER_CLOSE_WAIT)
+                try:
+                    screen = self.adb.screencap()
+                except AdbError:
+                    pass
+            else:
+                self.log(f"[结算] 点双倍未进广告 (state={state2})，可能次数用完，跳过")
+                screen = screen2
+
+        # 2. 点「确认」按钮（原逻辑）
         pos = find_settle_button(screen)
         if pos is None:
             self.log("未定位结算确定按钮")
@@ -227,6 +256,9 @@ class Worker:
         idx = self.chests_clicked
         cx, cy = CHEST_POSITIONS[idx]
         self.log(f"点宝箱 {idx + 1}/{len(CHEST_POSITIONS)} ({cx},{cy})")
+        self.adb.tap(cx, cy)
+        self._sleep(0.3)
+        # 兜底再点一次：中间宝箱有时点不到/响应慢，避免漏领
         self.adb.tap(cx, cy)
         self.chests_clicked += 1
         self._sleep(CHEST_WAIT)
@@ -549,8 +581,14 @@ class Worker:
                 screen = self.adb.screencap()
             except AdbError:
                 continue
+            # 用模板验证战斗 tab 是否真选中态（比 detect_state 准 — 不受 UNKNOWN/AD 干扰）
+            if is_battle_tab_active(screen):
+                state = detect_state(screen, self.ocr)
+                self.log(f"切回战斗 tab 成功 (state={state})")
+                return
+            # 兜底：detect_state 是 BATTLE/SETTLE/REWARD/PERFECT 等也算切走（战斗中无 tab 栏）
             state = detect_state(screen, self.ocr)
-            if state in (GameState.HOME, GameState.BATTLE, GameState.SETTLE,
+            if state in (GameState.BATTLE, GameState.SETTLE,
                          GameState.PERFECT_CLEAR, GameState.REWARD_POPUP):
                 self.log(f"切回战斗 tab 成功 (state={state})")
                 return
