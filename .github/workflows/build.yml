@@ -35,7 +35,7 @@ jobs:
       - name: Build EXE
         shell: pwsh
         run: |
-          pyinstaller --onefile --noconsole --name mumu_king `
+          pyinstaller --onefile --noconsole --name mumu_king-simple `
             --add-data "templates;templates" `
             --add-data "$env:APPDATA\cnocr;cnocr" `
             --add-data "$env:APPDATA\cnstd;cnstd" `
@@ -47,4 +47,4 @@ jobs:
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/mumu_king.exe
+          files: dist/mumu_king-simple.exe
