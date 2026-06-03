@@ -1,8 +1,8 @@
 """
 全局配置（540×960 最简版 main-simple）
 
-只做：战斗循环 + 选技能 + 体力不足等 30 分钟
-不做：红点日常 / 商店 / 装备升级合成 / 城堡秘研 / 完美通关 / 广告
+只做：战斗循环 + 选技能 + 完美通关领宝箱 + 体力不足等 30 分钟
+不做：红点日常 / 商店 / 装备升级合成 / 城堡秘研 / 广告
 """
 import os
 import sys
@@ -53,6 +53,7 @@ class GameState:
     BATTLE = "BATTLE"
     SKILL_SELECT = "SKILL_SELECT"
     SETTLE = "SETTLE"               # 战斗胜利/失败结算页「确定」按钮
+    PERFECT_CLEAR = "PERFECT_CLEAR"  # 完美通关页（红色印章 + 3 个金边宝箱）
     REWARD_POPUP = "REWARD_POPUP"   # 金色「获得奖励」金字（结算后 + 宝箱通用）
     BUY_STAMINA = "BUY_STAMINA"
     WHEEL = "WHEEL"
@@ -74,6 +75,17 @@ SKILL_CARD_ROIS = [
 
 # === 「获得奖励」弹窗外的安全点击点 ===
 REWARD_OUTSIDE = (270, 200)
+
+# === 完美通关页：3 个宝箱中心点 + 左滑下一关参数 ===
+CHEST_POSITIONS = [
+    (148, 495),    # 左宝箱
+    (263, 495),    # 中宝箱
+    (378, 495),    # 右宝箱
+]
+CHEST_WAIT = 1.0
+SWIPE_LEFT_FROM = (450, 480)
+SWIPE_LEFT_TO   = (90, 480)
+SWIPE_LEFT_DURATION_MS = 400
 
 # === 左上角体力 OCR ROI（"5/33" 格式）===
 STAMINA_ROI = (140, 40, 240, 90)

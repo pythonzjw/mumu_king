@@ -24,6 +24,8 @@ from config import (
     GameState, LOOP_INTERVAL, BATTLE_WAIT, ENTER_WAIT,
     SETTLE_WAIT, SKILL_SELECT_DELAY, SKILL_CARD_ROIS,
     REWARD_OUTSIDE,
+    CHEST_POSITIONS, CHEST_WAIT,
+    SWIPE_LEFT_FROM, SWIPE_LEFT_TO, SWIPE_LEFT_DURATION_MS,
     STAMINA_ROI, STAMINA_ZERO_WAIT_SECONDS,
     DEBUG_MAX_STEP_FILES,
 )
@@ -46,6 +48,8 @@ class Worker:
         self.unknown_count = 0
         self.max_unknown = 20
         self.step_count = 0
+        # 完美通关页已点的宝箱数（0~3）；点完 3 个后左滑回原页面
+        self.chests_clicked = 0
         self.ocr = None
         if self.debug:
             base = (os.path.dirname(sys.executable) if getattr(sys, "frozen", False)
@@ -96,6 +100,9 @@ class Worker:
                 elif state == GameState.SETTLE:
                     self.unknown_count = 0
                     self._handle_settle(screen)
+                elif state == GameState.PERFECT_CLEAR:
+                    self.unknown_count = 0
+                    self._handle_perfect_clear()
                 elif state == GameState.REWARD_POPUP:
                     self.unknown_count = 0
                     self._handle_reward_popup()
@@ -179,6 +186,23 @@ class Worker:
         self.log(f"点结算确定 ({pos[0]},{pos[1]})")
         self.adb.tap(pos[0], pos[1])
         self._sleep(SETTLE_WAIT)
+
+    def _handle_perfect_clear(self):
+        """完美通关页：依次点 3 个宝箱（每个点后弹 REWARD_POPUP 由主循环处理）→
+        3 个都点完则左滑下一关，重置 chests_clicked
+        """
+        if self.chests_clicked >= len(CHEST_POSITIONS):
+            self.log(f"3 个宝箱已处理，左滑到下一关 {SWIPE_LEFT_FROM} → {SWIPE_LEFT_TO}")
+            self.adb.swipe(*SWIPE_LEFT_FROM, *SWIPE_LEFT_TO, SWIPE_LEFT_DURATION_MS)
+            self.chests_clicked = 0
+            self._sleep(1.0)
+            return
+        idx = self.chests_clicked
+        cx, cy = CHEST_POSITIONS[idx]
+        self.log(f"点宝箱 {idx + 1}/{len(CHEST_POSITIONS)} ({cx},{cy})")
+        self.adb.tap(cx, cy)
+        self.chests_clicked += 1
+        self._sleep(CHEST_WAIT)
 
     def _handle_reward_popup(self):
         """金色「获得奖励」金字（结算/宝箱通用）→ 点空白关闭"""

@@ -27,6 +27,7 @@ TPL_ENTER = "enter_button.png"          # 主页「进入游戏」按钮
 TPL_BATTLE = "battle_indicator.png"     # 战斗中独有 UI（顶栏宝箱图标）
 TPL_SKILL_TITLE = "skill_select_title.png"  # 技能选择弹窗
 TPL_SETTLE = "confirm_button.png"       # 战斗胜利/失败结算页「确定」按钮
+TPL_PERFECT = "perfect_clear_seal.png"  # 完美通关页：红色「完美通关」印章
 TPL_REWARD = "reward_popup.png"         # 金色「获得奖励」金字（结算后 + 宝箱通用）
 TPL_BUY_STAMINA = "buy_stamina_title.png"  # 「购买体力」标题
 TPL_WHEEL = "wheel_close_hint.png"      # 击杀 boss 后的轮盘
@@ -64,7 +65,7 @@ def _try_match(screen, tpl_name, threshold=MATCH_THRESHOLD):
 
 def detect_state(screen):
     """识别当前游戏状态
-    优先级：BUY_STAMINA > REWARD_POPUP > WHEEL > SKILL_SELECT > SETTLE > BATTLE > HOME > UNKNOWN
+    优先级：BUY_STAMINA > REWARD_POPUP > WHEEL > PERFECT_CLEAR > SKILL_SELECT > SETTLE > BATTLE > HOME > UNKNOWN
     """
     if _try_match(screen, TPL_BUY_STAMINA)[0] >= MATCH_THRESHOLD:
         return GameState.BUY_STAMINA
@@ -72,6 +73,8 @@ def detect_state(screen):
         return GameState.REWARD_POPUP
     if _try_match(screen, TPL_WHEEL)[0] >= MATCH_THRESHOLD:
         return GameState.WHEEL
+    if _try_match(screen, TPL_PERFECT)[0] >= MATCH_THRESHOLD:
+        return GameState.PERFECT_CLEAR
     if _try_match(screen, TPL_SKILL_TITLE)[0] >= MATCH_THRESHOLD:
         return GameState.SKILL_SELECT
     if _try_match(screen, TPL_SETTLE)[0] >= MATCH_THRESHOLD:
@@ -90,6 +93,7 @@ def all_template_scores(screen):
         ("battle", TPL_BATTLE),
         ("skill", TPL_SKILL_TITLE),
         ("settle", TPL_SETTLE),
+        ("perfect", TPL_PERFECT),
         ("reward", TPL_REWARD),
         ("buy", TPL_BUY_STAMINA),
         ("wheel", TPL_WHEEL),
