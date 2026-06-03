@@ -42,8 +42,9 @@ from config import (
     CASTLE_MIYAN_ICON_ROI, CASTLE_POPUP_WAIT,
     CASTLE_CONTINUE_HINT_ROI, CASTLE_CONTINUE_HINT, CASTLE_CONTINUE_POLL,
     SCREEN_CENTER,
-    ADS_SKIP_ROI, ADS_KEYWORDS, ADS_FALLBACK_TAP,
+    ADS_SKIP_ROI, ADS_KEYWORDS, ADS_FALLBACK_TAPS,
     ADS_TIMEOUT_SEC, ADS_POLL_INTERVAL, ADS_AFTER_CLOSE_WAIT,
+    WHEEL_SKIP_BTN,
     UNKNOWN_RESCUE_OCR_AT, UNKNOWN_RESCUE_TAB_DELTA,
     UNKNOWN_RESCUE_KEYWORDS, UNKNOWN_RESCUE_ROI,
     DEBUG_MAX_STEP_FILES,
@@ -238,11 +239,14 @@ class Worker:
         self._do_dailies_within_window(STAMINA_ZERO_WAIT_SECONDS)
 
     def _handle_wheel(self):
-        """战斗中击杀 boss 后弹的轮盘 → 点空白关闭，不参与轮盘选择"""
-        x, y = REWARD_OUTSIDE
-        self.log(f"轮盘弹窗，点空白 ({x},{y}) 关闭")
-        self.adb.tap(x, y)
+        """战斗中击杀 boss 后弹的轮盘 → 优先点底部「跳过」按钮，兜底点空白"""
+        sx, sy = WHEEL_SKIP_BTN
+        self.log(f"轮盘弹窗，点底部跳过 ({sx},{sy})")
+        self.adb.tap(sx, sy)
         self._sleep(0.6)
+        # 兜底：万一跳过按钮位置不对（不同弹窗变种）再点空白
+        self.adb.tap(*REWARD_OUTSIDE)
+        self._sleep(0.4)
 
     # === 体力归零日常调度 ===
 
@@ -558,9 +562,8 @@ class Worker:
                     self._sleep(1.0)
                     return True
             self._sleep(ADS_POLL_INTERVAL)
-        self.log(f"[广告] 超时 {timeout}s，点兜底坐标 {ADS_FALLBACK_TAP}")
-        self.adb.tap(*ADS_FALLBACK_TAP)
-        self._sleep(1.0)
-        self.adb.tap(*ADS_FALLBACK_TAP)
-        self._sleep(1.0)
+        self.log(f"[广告] 超时 {timeout}s，依次点 {len(ADS_FALLBACK_TAPS)} 个兜底坐标")
+        for x, y in ADS_FALLBACK_TAPS:
+            self.adb.tap(x, y)
+            self._sleep(1.0)
         return False

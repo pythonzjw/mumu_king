@@ -159,13 +159,20 @@ CASTLE_CONTINUE_HINT     = "点击屏幕继续"
 CASTLE_CONTINUE_POLL     = 8
 SCREEN_CENTER            = (270, 480)
 
-# === 广告子流程（OCR 实测「跳过/关闭」皆在 (492, 62) 附近）===
-ADS_SKIP_ROI         = (410, 40, 540, 130)
+# === 广告子流程 ===
+# 「关闭/跳过」OCR 扫描区。实测两种样式：
+#   小按钮在 (492, 62)（早期广告）；大按钮在 (313, 189) 附近（图 23/24 那种大椭圆）
+# ROI 扩大到覆盖两种位置
+ADS_SKIP_ROI         = (160, 40, 540, 250)
 ADS_KEYWORDS         = ("关闭",)   # 只识别关闭，跳过阶段不动以确保奖励发放
-ADS_FALLBACK_TAP     = (492, 62)
+# 超时兜底坐标：依次试小按钮 + 大按钮位置
+ADS_FALLBACK_TAPS    = [(492, 62), (400, 185)]
 ADS_TIMEOUT_SEC      = 60
 ADS_POLL_INTERVAL    = 1.0
 ADS_AFTER_CLOSE_WAIT = 1.5
+
+# === Boss 轮盘弹窗底部「跳过」按钮（OCR 实测 (264, 905)）===
+WHEEL_SKIP_BTN       = (264, 905)
 
 # === UNKNOWN 主动脱困 ===
 UNKNOWN_RESCUE_OCR_AT    = 3
