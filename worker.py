@@ -22,14 +22,14 @@ def _imwrite_unicode(path, img):
 
 from config import (
     GameState, LOOP_INTERVAL, BATTLE_WAIT, ENTER_WAIT,
-    SKILL_SELECT_DELAY, SKILL_CARD_ROIS,
+    SETTLE_WAIT, SKILL_SELECT_DELAY, SKILL_CARD_ROIS,
     REWARD_OUTSIDE,
     STAMINA_ROI, STAMINA_ZERO_WAIT_SECONDS,
     DEBUG_MAX_STEP_FILES,
 )
 from adb import AdbError
 from recognizer import (
-    detect_state, find_enter_button,
+    detect_state, find_enter_button, find_settle_button,
     ocr_skill_cards, pick_skill_by_priority, read_stamina,
     all_template_scores, make_ocr, RecognizeError,
 )
@@ -93,6 +93,9 @@ class Worker:
                 elif state == GameState.SKILL_SELECT:
                     self.unknown_count = 0
                     self._handle_skill_select(screen)
+                elif state == GameState.SETTLE:
+                    self.unknown_count = 0
+                    self._handle_settle(screen)
                 elif state == GameState.REWARD_POPUP:
                     self.unknown_count = 0
                     self._handle_reward_popup()
@@ -167,8 +170,18 @@ class Worker:
             self.adb.tap(cx, cy)
         self._sleep(SKILL_SELECT_DELAY)
 
+    def _handle_settle(self, screen):
+        """战斗胜利/失败结算页：找「确定」按钮点击"""
+        pos = find_settle_button(screen)
+        if pos is None:
+            self.log("未定位结算确定按钮")
+            return
+        self.log(f"点结算确定 ({pos[0]},{pos[1]})")
+        self.adb.tap(pos[0], pos[1])
+        self._sleep(SETTLE_WAIT)
+
     def _handle_reward_popup(self):
-        """金色「获得奖励」金字（结算/宝箱/商店通用）→ 点空白关闭"""
+        """金色「获得奖励」金字（结算/宝箱通用）→ 点空白关闭"""
         x, y = REWARD_OUTSIDE
         self.log(f"获得奖励弹窗，点空白 ({x},{y}) 关闭")
         self.adb.tap(x, y)

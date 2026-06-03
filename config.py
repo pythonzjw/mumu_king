@@ -41,6 +41,7 @@ MUMU_CANDIDATE_PORTS = [16384, 16416, 16448, 16480, 16512, 16544, 16576, 16608]
 LOOP_INTERVAL = 1.0
 BATTLE_WAIT = 2.0
 ENTER_WAIT = 1.5
+SETTLE_WAIT = 1.0
 SKILL_SELECT_DELAY = 0.3
 
 # === 图像识别 ===
@@ -51,7 +52,8 @@ class GameState:
     HOME = "HOME"
     BATTLE = "BATTLE"
     SKILL_SELECT = "SKILL_SELECT"
-    REWARD_POPUP = "REWARD_POPUP"   # 金色「获得奖励」金字（结算 + 宝箱 通用）
+    SETTLE = "SETTLE"               # 战斗胜利/失败结算页「确定」按钮
+    REWARD_POPUP = "REWARD_POPUP"   # 金色「获得奖励」金字（结算后 + 宝箱通用）
     BUY_STAMINA = "BUY_STAMINA"
     WHEEL = "WHEEL"
     UNKNOWN = "UNKNOWN"

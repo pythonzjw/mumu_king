@@ -26,7 +26,8 @@ class RecognizeError(RuntimeError):
 TPL_ENTER = "enter_button.png"          # 主页「进入游戏」按钮
 TPL_BATTLE = "battle_indicator.png"     # 战斗中独有 UI（顶栏宝箱图标）
 TPL_SKILL_TITLE = "skill_select_title.png"  # 技能选择弹窗
-TPL_REWARD = "reward_popup.png"         # 金色「获得奖励」金字（结算 + 宝箱通用）
+TPL_SETTLE = "confirm_button.png"       # 战斗胜利/失败结算页「确定」按钮
+TPL_REWARD = "reward_popup.png"         # 金色「获得奖励」金字（结算后 + 宝箱通用）
 TPL_BUY_STAMINA = "buy_stamina_title.png"  # 「购买体力」标题
 TPL_WHEEL = "wheel_close_hint.png"      # 击杀 boss 后的轮盘
 
@@ -63,7 +64,7 @@ def _try_match(screen, tpl_name, threshold=MATCH_THRESHOLD):
 
 def detect_state(screen):
     """识别当前游戏状态
-    优先级：BUY_STAMINA > REWARD_POPUP > WHEEL > SKILL_SELECT > BATTLE > HOME > UNKNOWN
+    优先级：BUY_STAMINA > REWARD_POPUP > WHEEL > SKILL_SELECT > SETTLE > BATTLE > HOME > UNKNOWN
     """
     if _try_match(screen, TPL_BUY_STAMINA)[0] >= MATCH_THRESHOLD:
         return GameState.BUY_STAMINA
@@ -73,6 +74,8 @@ def detect_state(screen):
         return GameState.WHEEL
     if _try_match(screen, TPL_SKILL_TITLE)[0] >= MATCH_THRESHOLD:
         return GameState.SKILL_SELECT
+    if _try_match(screen, TPL_SETTLE)[0] >= MATCH_THRESHOLD:
+        return GameState.SETTLE
     if _try_match(screen, TPL_BATTLE)[0] >= MATCH_THRESHOLD:
         return GameState.BATTLE
     if _try_match(screen, TPL_ENTER)[0] >= MATCH_THRESHOLD:
@@ -86,6 +89,7 @@ def all_template_scores(screen):
         ("enter", TPL_ENTER),
         ("battle", TPL_BATTLE),
         ("skill", TPL_SKILL_TITLE),
+        ("settle", TPL_SETTLE),
         ("reward", TPL_REWARD),
         ("buy", TPL_BUY_STAMINA),
         ("wheel", TPL_WHEEL),
@@ -95,6 +99,11 @@ def all_template_scores(screen):
 
 def find_enter_button(screen):
     score, pos = _try_match(screen, TPL_ENTER)
+    return pos if score >= MATCH_THRESHOLD else None
+
+
+def find_settle_button(screen):
+    score, pos = _try_match(screen, TPL_SETTLE)
     return pos if score >= MATCH_THRESHOLD else None
 
 
