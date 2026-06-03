@@ -24,8 +24,7 @@ def _imwrite_unicode(path, img):
 
 from config import (
     GameState, LOOP_INTERVAL, BATTLE_WAIT, ENTER_WAIT,
-    SKILL_SELECT_DELAY, SKILL_CARD_ROIS,
-    PERFECT_CLEAR_KW, PERFECT_CLEAR_OCR_ROI,
+    SETTLE_WAIT, SKILL_SELECT_DELAY, SKILL_CARD_ROIS,
     CHEST_POSITIONS, CHEST_WAIT, REWARD_OUTSIDE,
     SWIPE_LEFT_FROM, SWIPE_LEFT_TO, SWIPE_LEFT_DURATION_MS,
     STAMINA_ROI, STAMINA_ZERO_WAIT_SECONDS,
@@ -51,7 +50,7 @@ from config import (
 )
 from adb import AdbError
 from recognizer import (
-    detect_state, find_enter_button,
+    detect_state, find_enter_button, find_settle_button,
     ocr_skill_cards, pick_skill_by_priority, read_stamina,
     all_template_scores, make_ocr, RecognizeError,
     detect_redot_tabs, ocr_find_text, is_in_shop_page,
@@ -120,6 +119,12 @@ class Worker:
                 elif state == GameState.SKILL_SELECT:
                     self.unknown_count = 0
                     self._handle_skill_select(screen)
+                elif state == GameState.SETTLE:
+                    self.unknown_count = 0
+                    self._handle_settle(screen)
+                elif state == GameState.PERFECT_CLEAR:
+                    self.unknown_count = 0
+                    self._handle_perfect_clear()
                 elif state == GameState.REWARD_POPUP:
                     self.unknown_count = 0
                     self._handle_reward_popup()
@@ -160,13 +165,7 @@ class Worker:
                 self._do_dailies_within_window(STAMINA_ZERO_WAIT_SECONDS)
                 return
 
-        # 2. OCR 找「完美通关」4 字 → 触发宝箱点击流程
-        if ocr_find_text(screen, PERFECT_CLEAR_KW, PERFECT_CLEAR_OCR_ROI, self.ocr):
-            self.log(f"OCR 命中「{PERFECT_CLEAR_KW}」→ 走宝箱点击")
-            self._handle_perfect_clear()
-            return
-
-        # 3. 普通进入战斗
+        # 2. 普通进入战斗（PERFECT_CLEAR 由 detect_state 模板识别，不在此 OCR 查）
         pos = find_enter_button(screen)
         if pos is None:
             self.log("未定位进入按钮")
@@ -193,6 +192,16 @@ class Worker:
             self.log(f"无关键字命中，点第一张「{text}」({cx},{cy})")
             self.adb.tap(cx, cy)
         self._sleep(SKILL_SELECT_DELAY)
+
+    def _handle_settle(self, screen):
+        """战斗胜利/失败结算页：找「确定」按钮点击"""
+        pos = find_settle_button(screen)
+        if pos is None:
+            self.log("未定位结算确定按钮")
+            return
+        self.log(f"点结算确定 ({pos[0]},{pos[1]})")
+        self.adb.tap(pos[0], pos[1])
+        self._sleep(SETTLE_WAIT)
 
     def _handle_perfect_clear(self):
         """完美通关页：依次点 3 个宝箱（每个点后弹 REWARD_POPUP 由主循环处理）→

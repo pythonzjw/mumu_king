@@ -43,19 +43,20 @@ MUMU_CANDIDATE_PORTS = [16384, 16416, 16448, 16480, 16512, 16544, 16576, 16608]
 LOOP_INTERVAL = 1.0          # 主循环每次截图间隔（从 0.5 调到 1.0 降频减负载）
 BATTLE_WAIT = 2.0            # 战斗中等待
 ENTER_WAIT = 1.5             # 点进入按钮后等加载
+SETTLE_WAIT = 1.0            # 点结算确定后等
 SKILL_SELECT_DELAY = 0.3     # 技能选择后延迟
 
 # === 图像识别配置 ===
 MATCH_THRESHOLD = 0.8        # 模板匹配阈值（0~1，越高越严格）
 
 # === 游戏状态枚举（字符串，便于日志可读）===
-# 注：SETTLE 合并到 REWARD_POPUP（胜负判断无意义，看到金色"获得奖励"就点掉）
-#     PERFECT_CLEAR 不在 detect_state 返回，改由 _handle_home 内 OCR 识别"完美通关"4 字触发
 class GameState:
     HOME = "HOME"                  # 主页/进入战斗按钮可见
     BATTLE = "BATTLE"              # 战斗进行中
     SKILL_SELECT = "SKILL_SELECT"  # 技能选择弹窗
-    REWARD_POPUP = "REWARD_POPUP"  # 「获得奖励」金字（结算 + 宝箱奖励 + 商店奖励 通用）
+    SETTLE = "SETTLE"              # 战斗胜利/失败的「确定」按钮（同位置同样式）
+    PERFECT_CLEAR = "PERFECT_CLEAR"  # 完美通关页（红色「完美通关」印章 + 3 个金边宝箱）
+    REWARD_POPUP = "REWARD_POPUP"  # 「获得奖励」金字（结算 + 宝箱奖励 通用）
     BUY_STAMINA = "BUY_STAMINA"    # 体力不足时的「购买体力」弹窗
     WHEEL = "WHEEL"                # 战斗中击杀 boss 后的轮盘选技能弹窗
     UNKNOWN = "UNKNOWN"
@@ -74,9 +75,7 @@ SKILL_CARD_ROIS = [
     (380, 322, 510, 667),   # 右卡
 ]
 
-# === 完美通关页：改用 OCR 识别「完美通关」4 字 + 点 3 个宝箱 ===
-PERFECT_CLEAR_KW         = "完美通关"
-PERFECT_CLEAR_OCR_ROI    = (0, 100, 540, 500)  # 屏幕中上区域
+# === 完美通关页：模板识别 + 点 3 个宝箱 ===
 # 3 个宝箱中心点（540×960，原 1080 是 (295,990)/(525,990)/(755,990)，等比缩放再校）
 CHEST_POSITIONS = [
     (148, 495),    # 左宝箱

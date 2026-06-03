@@ -30,7 +30,9 @@ class RecognizeError(RuntimeError):
 TPL_ENTER = "enter_button.png"          # 主页/大厅的「进入游戏」按钮
 TPL_BATTLE = "battle_indicator.png"     # 战斗中独有的 UI（顶栏宝箱图标）
 TPL_SKILL_TITLE = "skill_select_title.png"  # 技能选择弹窗（底部「刷新」按钮）
-TPL_REWARD = "reward_popup.png"         # 金色「获得奖励」金字（结算 + 宝箱奖励 + 商店奖励通用）
+TPL_SETTLE = "confirm_button.png"       # 战斗胜利/失败结算页的「确定」按钮（同位置同样式）
+TPL_PERFECT = "perfect_clear_seal.png"  # 完美通关页：红色「完美通关」印章
+TPL_REWARD = "reward_popup.png"         # 金色「获得奖励」金字（结算后 / 宝箱奖励 通用）
 TPL_BUY_STAMINA = "buy_stamina_title.png"  # 「购买体力」黑底白字标题
 TPL_WHEEL = "wheel_close_hint.png"      # 击杀 boss 后的轮盘弹窗
 
@@ -70,11 +72,11 @@ def _try_match(screen, tpl_name, threshold=MATCH_THRESHOLD):
 def detect_state(screen):
     """识别当前游戏状态。
     优先级：BUY_STAMINA > REWARD_POPUP > WHEEL > PERFECT_CLEAR > SKILL_SELECT > SETTLE > BATTLE > HOME > UNKNOWN
-    - BUY_STAMINA 最前：覆盖 HOME 画面的弹窗，HOME 的「进入游戏」按钮还在画面
-    - REWARD_POPUP 第二前：完美通关页/普通胜利后弹的奖励，「完美通关」印章和「进入游戏」按钮仍在
+    - BUY_STAMINA 最前：覆盖 HOME 画面的弹窗
+    - REWARD_POPUP 第二前：金色「获得奖励」金字（结算后 / 宝箱奖励 / 商店奖励通用）
     - WHEEL 在 BATTLE 前：战斗中弹的，battle_indicator 仍可能匹配
-    - PERFECT_CLEAR 比 HOME 前：完美通关页底部也是「进入游戏」按钮
-    - PERFECT_CLEAR 不在此识别 — 改由 _handle_home 内 OCR 找「完美通关」4 字触发
+    - PERFECT_CLEAR 在 SKILL_SELECT 之前：完美通关页底部也是「进入游戏」按钮
+    - SETTLE 在 BATTLE 前：战斗胜利/失败的「确定」按钮
     """
     score_buy, _ = _try_match(screen, TPL_BUY_STAMINA)
     if score_buy >= MATCH_THRESHOLD:
@@ -88,9 +90,17 @@ def detect_state(screen):
     if score_wheel >= MATCH_THRESHOLD:
         return GameState.WHEEL
 
+    score_perfect, _ = _try_match(screen, TPL_PERFECT)
+    if score_perfect >= MATCH_THRESHOLD:
+        return GameState.PERFECT_CLEAR
+
     score_skill, _ = _try_match(screen, TPL_SKILL_TITLE)
     if score_skill >= MATCH_THRESHOLD:
         return GameState.SKILL_SELECT
+
+    score_settle, _ = _try_match(screen, TPL_SETTLE)
+    if score_settle >= MATCH_THRESHOLD:
+        return GameState.SETTLE
 
     score_battle, _ = _try_match(screen, TPL_BATTLE)
     if score_battle >= MATCH_THRESHOLD:
@@ -109,6 +119,8 @@ def all_template_scores(screen):
         ("enter", TPL_ENTER),
         ("battle", TPL_BATTLE),
         ("skill", TPL_SKILL_TITLE),
+        ("settle", TPL_SETTLE),
+        ("perfect", TPL_PERFECT),
         ("reward", TPL_REWARD),
         ("buy", TPL_BUY_STAMINA),
         ("wheel", TPL_WHEEL),
@@ -122,6 +134,11 @@ def all_template_scores(screen):
 
 def find_enter_button(screen):
     score, pos = _try_match(screen, TPL_ENTER)
+    return pos if score >= MATCH_THRESHOLD else None
+
+
+def find_settle_button(screen):
+    score, pos = _try_match(screen, TPL_SETTLE)
     return pos if score >= MATCH_THRESHOLD else None
 
 
