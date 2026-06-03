@@ -34,6 +34,7 @@ from config import (
     UPGRADE_DIALOG_WAIT, UPGRADE_CONFIRM_KW, UPGRADE_CONFIRM_ROI,
     SHOP_ENTER_WAIT, SHOP_OCR_ROI,
     SHOP_SWIPE_UP_FROM, SHOP_SWIPE_UP_TO, SHOP_SWIPE_DURATION_MS,
+    SHOP_SWIPE_DOWN_FROM, SHOP_SWIPE_DOWN_TO, SHOP_RESET_TO_TOP_TIMES,
     SHOP_MAX_SWIPE, SHOP_MAX_EMPTY_SWIPE, SHOP_KEYWORD_FREE, SHOP_AD_BLOCKLIST,
     SHOP_AFTER_TAP_WAIT, SHOP_REWARD_CLOSE_WAIT,
     SHOP_CONFIRM_KW, SHOP_CONFIRM_ROI, SHOP_CONFIRM_POLL,
@@ -186,6 +187,12 @@ class Worker:
         cards = ocr_skill_cards(screen, SKILL_CARD_ROIS, self.ocr)
         for i, (cx, cy, text) in enumerate(cards, 1):
             self.log(f"  技能卡 {i}: {text or '(OCR 失败)'}")
+        # 防御：战斗技能卡必含「解锁/学习/伤害/次」之一（如「解锁脉冲激光」「奥术飞弹子弹+1」）
+        # 城堡法术书页只有名字+Lv.X，不含这些 → 跳过避免误点法术书（如「火球术」）
+        combined = " ".join(t for _, _, t in cards)
+        if not any(kw in combined for kw in ("解锁", "学习", "伤害", "次", "+")):
+            self.log(f"[技能选择] 防御命中 — 3 卡文本不像战斗技能 ({combined[:40]}...)，跳过")
+            return
         hit = pick_skill_by_priority(cards, self.skill_priority)
         if hit:
             cx, cy, kw, text = hit
@@ -354,6 +361,13 @@ class Worker:
         self.adb.tap(*TAB_SHOP)
         self._sleep(SHOP_ENTER_WAIT)
 
+        # 先下滑 N 次重置到商店顶部（游戏切 tab 不自动滚顶，下次进可能还在底部）
+        for _ in range(SHOP_RESET_TO_TOP_TIMES):
+            self.adb.swipe(*SHOP_SWIPE_DOWN_FROM, *SHOP_SWIPE_DOWN_TO, SHOP_SWIPE_DURATION_MS)
+            self._sleep(0.3)
+        self.log(f"[商店] 已下滑 {SHOP_RESET_TO_TOP_TIMES} 次重置到顶部")
+        self._sleep(0.5)
+
         clicked = set()
         prev_swipe_signature = None
         empty_swipe_count = 0    # 连续上滑后扫不到「免费」的次数，>= SHOP_MAX_EMPTY_SWIPE 才退
@@ -518,14 +532,19 @@ class Worker:
         self.log("=== 城堡日常结束 ===")
 
     def _force_back_to_battle(self):
-        """切回战斗 tab，验证是否成功；失败先关任何残留弹窗再切。最多重试 3 次
-        城堡广告关闭后可能弹运营页 / 残留弹窗遮挡 tab → 普通 tap 不生效
+        """切回战斗 tab，验证是否成功；失败先关任何残留弹窗再切。最多重试 5 次
+        城堡广告关闭后可能弹运营页 / 法术书页 / 残留弹窗遮挡 tab → 普通 tap 不生效
+        每次重试前**先连点屏幕中心 3 次强力关弹窗**，再 tap TAB_BATTLE
         """
-        for attempt in range(3):
+        for attempt in range(5):
             if not self.running:
                 return
+            # 强力关弹窗：连点屏幕中心 3 次
+            for _ in range(3):
+                self.adb.tap(*SCREEN_CENTER)
+                self._sleep(0.3)
             self.adb.tap(*TAB_BATTLE)
-            self._sleep(TAB_SWITCH_WAIT)
+            self._sleep(TAB_SWITCH_WAIT * 1.5)
             try:
                 screen = self.adb.screencap()
             except AdbError:
@@ -535,10 +554,8 @@ class Worker:
                          GameState.PERFECT_CLEAR, GameState.REWARD_POPUP):
                 self.log(f"切回战斗 tab 成功 (state={state})")
                 return
-            # 未切走 → 可能有残留弹窗遮 tab → 点屏幕中心 + OCR 找「确定/关闭」
-            self.log(f"[切回战斗 尝试 {attempt+1}/3] 未切走 (state={state})，先关弹窗")
-            self.adb.tap(*SCREEN_CENTER)
-            self._sleep(0.5)
+            # 未切走 → OCR 找弹窗「确定/关闭」点掉
+            self.log(f"[切回战斗 尝试 {attempt+1}/5] 未切走 (state={state})")
             for kw in ("确定", "关闭"):
                 hits = ocr_find_text(screen, kw, UNKNOWN_RESCUE_ROI, self.ocr)
                 if hits:
@@ -547,7 +564,7 @@ class Worker:
                     self.adb.tap(cx, cy)
                     self._sleep(0.5)
                     break
-        self.log("[切回战斗] 3 次都失败，留给 UNKNOWN 脱困逻辑")
+        self.log("[切回战斗] 5 次都失败，留给 UNKNOWN 脱困逻辑")
 
     # === UNKNOWN 脱困 ===
 

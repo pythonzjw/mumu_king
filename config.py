@@ -137,6 +137,10 @@ SHOP_SWIPE_DURATION_MS  = 600
 SHOP_MAX_SWIPE          = 12
 # 连续 N 次上滑都没新「免费」才退商店（容忍金币商城/资源商城屏 OCR 抖动）
 SHOP_MAX_EMPTY_SWIPE    = 3
+# 进商店后先下滑 N 次重置到顶部（游戏切 tab 不会自动滚顶）
+SHOP_RESET_TO_TOP_TIMES = 4
+SHOP_SWIPE_DOWN_FROM    = (270, 300)
+SHOP_SWIPE_DOWN_TO      = (270, 750)
 SHOP_KEYWORD_FREE       = "免费"
 SHOP_AD_BLOCKLIST       = ("立即下载", "下载详情", "安装")
 SHOP_AFTER_TAP_WAIT     = 1.5
