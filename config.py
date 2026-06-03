@@ -59,6 +59,7 @@ class GameState:
     REWARD_POPUP = "REWARD_POPUP"  # 「获得奖励」金字（结算 + 宝箱奖励 通用）
     BUY_STAMINA = "BUY_STAMINA"    # 体力不足时的「购买体力」弹窗
     WHEEL = "WHEEL"                # 战斗中击杀 boss 后的轮盘选技能弹窗
+    AD = "AD"                      # 广告页（右上角有「X 秒｜跳过」/「关闭」）
     UNKNOWN = "UNKNOWN"
 
 # === 默认技能优先级（substring 匹配，越靠前越优先）===
@@ -175,6 +176,12 @@ ADS_AFTER_CLOSE_WAIT = 1.5
 
 # === Boss 轮盘弹窗底部「跳过」按钮（OCR 实测 (264, 905)）===
 WHEEL_SKIP_BTN       = (264, 905)
+
+# === AD 广告页识别（detect_state 末尾兜底 OCR）===
+# 右上角小 ROI 找以下关键字任一命中 → 视为广告页
+AD_DETECT_ROI        = (160, 40, 540, 250)         # 跟 ADS_SKIP_ROI 共用
+AD_DETECT_KEYWORDS   = ("跳过", "关闭")            # 单字「秒」太通用，不用
+
 
 # === UNKNOWN 主动脱困 ===
 UNKNOWN_RESCUE_OCR_AT    = 3

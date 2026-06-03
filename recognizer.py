@@ -14,6 +14,7 @@ import numpy as np
 from config import (
     TEMPLATES_DIR, MATCH_THRESHOLD, GameState,
     REDOT_TPL, REDOT_ROIS, REDOT_MATCH_THRESHOLD,
+    AD_DETECT_ROI, AD_DETECT_KEYWORDS,
 )
 
 # OCR 全局锁：多 worker 共用 GPU（DirectML）时同时推理会 native 崩溃
@@ -69,14 +70,16 @@ def _try_match(screen, tpl_name, threshold=MATCH_THRESHOLD):
         return 0.0, None
 
 
-def detect_state(screen):
+def detect_state(screen, ocr=None):
     """识别当前游戏状态。
-    优先级：BUY_STAMINA > REWARD_POPUP > WHEEL > PERFECT_CLEAR > SKILL_SELECT > SETTLE > BATTLE > HOME > UNKNOWN
+    优先级：BUY_STAMINA > REWARD_POPUP > WHEEL > PERFECT_CLEAR > SKILL_SELECT > SETTLE > BATTLE > HOME > AD > UNKNOWN
     - BUY_STAMINA 最前：覆盖 HOME 画面的弹窗
-    - REWARD_POPUP 第二前：金色「获得奖励」金字（结算后 / 宝箱奖励 / 商店奖励通用）
+    - REWARD_POPUP 第二前：金色「获得奖励」金字
     - WHEEL 在 BATTLE 前：战斗中弹的，battle_indicator 仍可能匹配
     - PERFECT_CLEAR 在 SKILL_SELECT 之前：完美通关页底部也是「进入游戏」按钮
     - SETTLE 在 BATTLE 前：战斗胜利/失败的「确定」按钮
+    - AD 在 HOME 之后、UNKNOWN 之前：模板都没命中时 OCR 兜底找广告关键字
+      （传 ocr 参数才启用 AD 识别；不传 ocr 旧调用保持纯模板匹配兼容）
     """
     score_buy, _ = _try_match(screen, TPL_BUY_STAMINA)
     if score_buy >= MATCH_THRESHOLD:
@@ -109,6 +112,13 @@ def detect_state(screen):
     score_enter, _ = _try_match(screen, TPL_ENTER)
     if score_enter >= MATCH_THRESHOLD:
         return GameState.HOME
+
+    # AD 兜底：所有模板都没命中时 OCR 扫右上角找广告关键字
+    if ocr is not None:
+        for kw in AD_DETECT_KEYWORDS:
+            hits = ocr_find_text(screen, kw, AD_DETECT_ROI, ocr)
+            if hits:
+                return GameState.AD
 
     return GameState.UNKNOWN
 

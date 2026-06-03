@@ -108,7 +108,7 @@ class Worker:
             try:
                 screen = self.adb.screencap()
                 self._save_debug(screen)
-                state = detect_state(screen)
+                state = detect_state(screen, self.ocr)
                 self.log(f"状态: {state}")
 
                 if state == GameState.HOME:
@@ -135,6 +135,9 @@ class Worker:
                 elif state == GameState.WHEEL:
                     self.unknown_count = 0
                     self._handle_wheel()
+                elif state == GameState.AD:
+                    self.unknown_count = 0
+                    self._handle_ad()
                 else:
                     self.unknown_count += 1
                     self._handle_unknown(screen)
@@ -247,6 +250,12 @@ class Worker:
         # 兜底：万一跳过按钮位置不对（不同弹窗变种）再点空白
         self.adb.tap(*REWARD_OUTSIDE)
         self._sleep(0.4)
+
+    def _handle_ad(self):
+        """主循环识别到广告页（detect_state 返回 AD）→ 调用 _watch_ad 等关闭"""
+        self.log("识别到广告页，等待关闭...")
+        self._watch_ad()
+        self._sleep(ADS_AFTER_CLOSE_WAIT)
 
     # === 体力归零日常调度 ===
 
@@ -521,7 +530,7 @@ class Worker:
                 screen = self.adb.screencap()
             except AdbError:
                 continue
-            state = detect_state(screen)
+            state = detect_state(screen, self.ocr)
             if state in (GameState.HOME, GameState.BATTLE, GameState.SETTLE,
                          GameState.PERFECT_CLEAR, GameState.REWARD_POPUP):
                 self.log(f"切回战斗 tab 成功 (state={state})")
