@@ -133,7 +133,9 @@ SHOP_OCR_ROI            = (0, 90, 540, 875)
 SHOP_SWIPE_UP_FROM      = (270, 750)
 SHOP_SWIPE_UP_TO        = (270, 300)
 SHOP_SWIPE_DURATION_MS  = 600
-SHOP_MAX_SWIPE          = 8
+SHOP_MAX_SWIPE          = 12
+# 连续 N 次上滑都没新「免费」才退商店（容忍金币商城/资源商城屏 OCR 抖动）
+SHOP_MAX_EMPTY_SWIPE    = 3
 SHOP_KEYWORD_FREE       = "免费"
 SHOP_AD_BLOCKLIST       = ("立即下载", "下载详情", "安装")
 SHOP_AFTER_TAP_WAIT     = 1.5

@@ -34,7 +34,7 @@ from config import (
     UPGRADE_DIALOG_WAIT, UPGRADE_CONFIRM_KW, UPGRADE_CONFIRM_ROI,
     SHOP_ENTER_WAIT, SHOP_OCR_ROI,
     SHOP_SWIPE_UP_FROM, SHOP_SWIPE_UP_TO, SHOP_SWIPE_DURATION_MS,
-    SHOP_MAX_SWIPE, SHOP_KEYWORD_FREE, SHOP_AD_BLOCKLIST,
+    SHOP_MAX_SWIPE, SHOP_MAX_EMPTY_SWIPE, SHOP_KEYWORD_FREE, SHOP_AD_BLOCKLIST,
     SHOP_AFTER_TAP_WAIT, SHOP_REWARD_CLOSE_WAIT,
     SHOP_CONFIRM_KW, SHOP_CONFIRM_ROI, SHOP_CONFIRM_POLL,
     CASTLE_ENTER_WAIT, CASTLE_GET_SCROLL_ROI, CASTLE_GET_SCROLL_KW,
@@ -347,6 +347,7 @@ class Worker:
 
         clicked = set()
         prev_swipe_signature = None
+        empty_swipe_count = 0    # 连续上滑后扫不到「免费」的次数，>= SHOP_MAX_EMPTY_SWIPE 才退
         for round_idx in range(SHOP_MAX_SWIPE):
             if not self.running:
                 break
@@ -379,13 +380,20 @@ class Worker:
                 )
                 clicked.clear()  # 新视野，清空 clicked
                 cur_sig = frozenset((h[0] // 40, h[1] // 40) for h in hits2)
+                # 两次上滑后 OCR 签名完全相同 = 真到底了
                 if cur_sig and cur_sig == prev_swipe_signature:
                     self.log("[商店] 上滑后 OCR 与上次完全一致，已到底，结束")
                     break
                 prev_swipe_signature = cur_sig
+                # 空上滑容忍：连续 N 次都扫不到「免费」才退，避免金币/资源商城屏 OCR 抖动误退
                 if not hits2:
-                    self.log("[商店] 上滑后无任何「免费」，结束")
-                    break
+                    empty_swipe_count += 1
+                    self.log(f"[商店] 上滑后无「免费」({empty_swipe_count}/{SHOP_MAX_EMPTY_SWIPE})")
+                    if empty_swipe_count >= SHOP_MAX_EMPTY_SWIPE:
+                        self.log(f"[商店] 连续 {SHOP_MAX_EMPTY_SWIPE} 次空上滑，结束")
+                        break
+                else:
+                    empty_swipe_count = 0   # 这次扫到了，重置计数
                 continue
 
             cx, cy, text = new_hits[0]
@@ -496,11 +504,41 @@ class Worker:
         else:
             self.log("[城堡] 未找到「获取秘卷」按钮，跳过广告环节")
 
-        # 3. 切回战斗 tab（不再点「秘研」按钮升级）
-        self.log(f"切回战斗 tab {TAB_BATTLE}")
-        self.adb.tap(*TAB_BATTLE)
-        self._sleep(TAB_SWITCH_WAIT)
+        # 3. 强切回战斗 tab（带验证 + 关残留弹窗重试）
+        self._force_back_to_battle()
         self.log("=== 城堡日常结束 ===")
+
+    def _force_back_to_battle(self):
+        """切回战斗 tab，验证是否成功；失败先关任何残留弹窗再切。最多重试 3 次
+        城堡广告关闭后可能弹运营页 / 残留弹窗遮挡 tab → 普通 tap 不生效
+        """
+        for attempt in range(3):
+            if not self.running:
+                return
+            self.adb.tap(*TAB_BATTLE)
+            self._sleep(TAB_SWITCH_WAIT)
+            try:
+                screen = self.adb.screencap()
+            except AdbError:
+                continue
+            state = detect_state(screen)
+            if state in (GameState.HOME, GameState.BATTLE, GameState.SETTLE,
+                         GameState.PERFECT_CLEAR, GameState.REWARD_POPUP):
+                self.log(f"切回战斗 tab 成功 (state={state})")
+                return
+            # 未切走 → 可能有残留弹窗遮 tab → 点屏幕中心 + OCR 找「确定/关闭」
+            self.log(f"[切回战斗 尝试 {attempt+1}/3] 未切走 (state={state})，先关弹窗")
+            self.adb.tap(*SCREEN_CENTER)
+            self._sleep(0.5)
+            for kw in ("确定", "关闭"):
+                hits = ocr_find_text(screen, kw, UNKNOWN_RESCUE_ROI, self.ocr)
+                if hits:
+                    cx, cy, _ = hits[0]
+                    self.log(f"[切回战斗] 点弹窗「{kw}」({cx},{cy})")
+                    self.adb.tap(cx, cy)
+                    self._sleep(0.5)
+                    break
+        self.log("[切回战斗] 3 次都失败，留给 UNKNOWN 脱困逻辑")
 
     # === UNKNOWN 脱困 ===
 
