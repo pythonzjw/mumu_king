@@ -26,6 +26,7 @@ from config import (
     REWARD_OUTSIDE,
     CHEST_POSITIONS, CHEST_WAIT,
     SWIPE_LEFT_FROM, SWIPE_LEFT_TO, SWIPE_LEFT_DURATION_MS,
+    WHEEL_SKIP_BTN,
     STAMINA_ROI, STAMINA_ZERO_WAIT_SECONDS,
     DEBUG_MAX_STEP_FILES,
 )
@@ -222,8 +223,10 @@ class Worker:
         self._sleep(STAMINA_ZERO_WAIT_SECONDS)
 
     def _handle_wheel(self):
-        """战斗中击杀 boss 后弹的轮盘 → 点空白关闭"""
-        x, y = REWARD_OUTSIDE
-        self.log(f"轮盘弹窗，点空白 ({x},{y}) 关闭")
-        self.adb.tap(x, y)
+        """战斗中击杀 boss 后弹的轮盘 → 优先点底部「跳过」按钮，兜底点空白"""
+        sx, sy = WHEEL_SKIP_BTN
+        self.log(f"轮盘弹窗，点底部跳过 ({sx},{sy})")
+        self.adb.tap(sx, sy)
         self._sleep(0.6)
+        self.adb.tap(*REWARD_OUTSIDE)
+        self._sleep(0.4)

@@ -87,6 +87,9 @@ SWIPE_LEFT_FROM = (450, 480)
 SWIPE_LEFT_TO   = (90, 480)
 SWIPE_LEFT_DURATION_MS = 400
 
+# === Boss 轮盘弹窗底部「跳过」按钮（OCR 实测 (264, 905)）===
+WHEEL_SKIP_BTN = (264, 905)
+
 # === 左上角体力 OCR ROI（"5/33" 格式）===
 STAMINA_ROI = (140, 40, 240, 90)
 STAMINA_ZERO_WAIT_SECONDS = 30 * 60   # 体力为 0 等 30 分钟
