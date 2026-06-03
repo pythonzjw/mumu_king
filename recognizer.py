@@ -354,10 +354,13 @@ def is_in_shop_page(screen, ocr):
     """粗判当前是否还在商店（或类似带底部 tab 栏的游戏内页）。
     判定：底部 tab 区 OCR 能识别到「战斗」或「商店」字样 → 视为在 tab 页内
     广告页底部 tab 不可见 → 返回 False
+
+    自适应分辨率：取截图底部 ~85px 作为 ROI，避免硬编码 y 坐标
+    （540×960 下 tab 文字 y=945；1080×1920 下 y=1890；都覆盖）
     """
-    # 底部 tab 栏区域
-    roi = (0, 1750, screen.shape[1], min(screen.shape[0], 1920))
-    crop = screen[roi[1]:roi[3], roi[0]:roi[2]]
+    h, w = screen.shape[:2]
+    bottom = max(0, h - 85)
+    crop = screen[bottom:h, 0:w]
     try:
         with _OCR_LOCK:
             lines = ocr.ocr(crop)

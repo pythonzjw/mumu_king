@@ -436,11 +436,16 @@ class Worker:
     # === 城堡日常 ===
 
     def _do_castle_daily(self):
-        """城堡红点日常：切城堡 → 点左上「秘研」图标 → 获取秘卷（看广告）→ 关奖励 → 秘研 → 点屏幕继续 → 切回战斗"""
+        """城堡红点日常：切城堡 → 点左上「秘研」图标 → 获取秘卷（看广告）→
+        关广告 → 点屏幕中心关秘卷领取提示 → 切回战斗 tab
+
+        注：不再主动点「秘研」按钮升级法术书 — 只领广告奖励
+        """
         self.log("=== 城堡日常开始 ===")
         self.adb.tap(*TAB_CASTLE)
         self._sleep(CASTLE_ENTER_WAIT)
 
+        # 1. 点左上「秘研」图标弹出操作框
         try:
             entry_screen = self.adb.screencap()
         except AdbError as e:
@@ -461,6 +466,7 @@ class Worker:
         self.adb.tap(cx, cy)
         self._sleep(CASTLE_POPUP_WAIT)
 
+        # 2. 点「获取秘卷」按钮 → 看广告 → 点屏幕中心关秘卷提示
         try:
             screen = self.adb.screencap()
         except AdbError as e:
@@ -477,43 +483,16 @@ class Worker:
             self._sleep(1.2)
             self._watch_ad()
             self._sleep(ADS_AFTER_CLOSE_WAIT)
+            # 关「获得秘卷」提示弹窗：点屏幕中心 + 点空白冗余
+            self.log(f"[城堡] 点屏幕中心 {SCREEN_CENTER} 关秘卷提示")
+            self.adb.tap(*SCREEN_CENTER)
+            self._sleep(0.8)
             self.adb.tap(*REWARD_OUTSIDE)
             self._sleep(0.6)
         else:
             self.log("[城堡] 未找到「获取秘卷」按钮，跳过广告环节")
 
-        try:
-            screen2 = self.adb.screencap()
-        except AdbError as e:
-            self.log(f"城堡秘研前截图失败: {e}")
-            self.adb.tap(*TAB_BATTLE)
-            self._sleep(TAB_SWITCH_WAIT)
-            return
-
-        miyan = ocr_find_text(screen2, CASTLE_MIYAN_BTN_KW, CASTLE_MIYAN_BTN_ROI, self.ocr)
-        if miyan:
-            cx, cy, text = miyan[0]
-            self.log(f"[城堡] 点「{text.strip()}」({cx},{cy})")
-            self.adb.tap(cx, cy)
-            self._sleep(2.0)
-            for _ in range(CASTLE_CONTINUE_POLL):
-                if not self.running:
-                    break
-                try:
-                    s = self.adb.screencap()
-                except AdbError:
-                    break
-                if ocr_find_text(s, CASTLE_CONTINUE_HINT, CASTLE_CONTINUE_HINT_ROI, self.ocr):
-                    self.log(f"[城堡] 检测到「{CASTLE_CONTINUE_HINT}」，点屏幕中心")
-                    self.adb.tap(*SCREEN_CENTER)
-                    self._sleep(0.8)
-                    break
-                self._sleep(0.5)
-            else:
-                self.log("[城堡] 未等到「点击屏幕继续」（可能秘卷不足），放弃")
-        else:
-            self.log("[城堡] 未找到「秘研」按钮")
-
+        # 3. 切回战斗 tab（不再点「秘研」按钮升级）
         self.log(f"切回战斗 tab {TAB_BATTLE}")
         self.adb.tap(*TAB_BATTLE)
         self._sleep(TAB_SWITCH_WAIT)
