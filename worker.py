@@ -564,36 +564,47 @@ class Worker:
         self.log("=== 城堡日常结束 ===")
 
     def _force_back_to_battle(self):
-        """切回战斗 tab，验证是否成功；失败先关任何残留弹窗再切。最多重试 5 次
-        城堡广告关闭后可能弹运营页 / 法术书页 / 残留弹窗遮挡 tab → 普通 tap 不生效
-        每次重试前**先连点屏幕中心 3 次强力关弹窗**，再 tap TAB_BATTLE
+        """切回战斗 tab。无副作用操作 — 先检查再点击。最多 5 次
+
+        v0.5.10 改：完全去掉 v0.5.8 加的「连点屏幕中心 3 次」
+        — SCREEN_CENTER=(270,480) 在城堡法术书页正好是火球术图标位置，
+        会触发法术书升级覆盖战斗 tab 导致死循环。
+        改用 REWARD_OUTSIDE=(270,200) 顶部账号栏下方安全空白关弹窗。
         """
         for attempt in range(5):
             if not self.running:
                 return
-            # 强力关弹窗：连点屏幕中心 3 次
-            for _ in range(3):
-                self.adb.tap(*SCREEN_CENTER)
-                self._sleep(0.3)
+            # 1. 先截图检查是否已经在战斗 tab
+            try:
+                screen = self.adb.screencap()
+            except AdbError:
+                continue
+            if is_battle_tab_active(screen):
+                self.log(f"切回战斗 tab 成功 (attempt {attempt}, already active)")
+                return
+
+            # 2. tap 战斗 tab → 验证
             self.adb.tap(*TAB_BATTLE)
             self._sleep(TAB_SWITCH_WAIT * 1.5)
             try:
                 screen = self.adb.screencap()
             except AdbError:
                 continue
-            # 用模板验证战斗 tab 是否真选中态（比 detect_state 准 — 不受 UNKNOWN/AD 干扰）
             if is_battle_tab_active(screen):
-                state = detect_state(screen, self.ocr)
-                self.log(f"切回战斗 tab 成功 (state={state})")
+                self.log(f"切回战斗 tab 成功 (attempt {attempt} after tap)")
                 return
-            # 兜底：detect_state 是 BATTLE/SETTLE/REWARD/PERFECT 等也算切走（战斗中无 tab 栏）
+            # 兜底：战斗中/结算等画面无 tab 栏但也算切走
             state = detect_state(screen, self.ocr)
             if state in (GameState.BATTLE, GameState.SETTLE,
                          GameState.PERFECT_CLEAR, GameState.REWARD_POPUP):
                 self.log(f"切回战斗 tab 成功 (state={state})")
                 return
-            # 未切走 → OCR 找弹窗「确定/关闭」点掉
-            self.log(f"[切回战斗 尝试 {attempt+1}/5] 未切走 (state={state})")
+
+            # 3. 未切走 → 点顶部安全空白关弹窗（不点屏幕中心避免误触法术书等）
+            self.log(f"[切回战斗 {attempt+1}/5] 未切走 (state={state})，点顶部空白")
+            self.adb.tap(*REWARD_OUTSIDE)   # (270, 200) 账号栏下方安全空白
+            self._sleep(0.5)
+            # 也试 OCR 找弹窗「确定/关闭」
             for kw in ("确定", "关闭"):
                 hits = ocr_find_text(screen, kw, UNKNOWN_RESCUE_ROI, self.ocr)
                 if hits:
