@@ -74,6 +74,8 @@ class Worker:
         self.step_count = 0
         # 完美通关页已点的宝箱数（0~3）；点完 3 个后左滑回原页面
         self.chests_clicked = 0
+        # 超值礼包上次领取时间戳：23h 内不再重复领（用户要求一天一次）
+        self._last_super_gift_at = 0
         # OCR 实例：run() 第一行 lazy 创建，多 worker 并行加载
         self.ocr = None
         if self.debug:
@@ -400,6 +402,9 @@ class Worker:
         self.log(f"[商店] 已下滑 {SHOP_RESET_TO_TOP_TIMES} 次重置到顶部")
         self._sleep(0.5)
 
+        # 顶部超值礼包入口：每天免费领体力 6（一天一次，23h 冷却）
+        self._do_shop_super_gift()
+
         clicked = set()
         prev_swipe_signature = None
         empty_swipe_count = 0    # 连续上滑后扫不到「免费」的次数，>= SHOP_MAX_EMPTY_SWIPE 才退
@@ -476,6 +481,42 @@ class Worker:
         self.adb.tap(*TAB_BATTLE)
         self._sleep(TAB_SWITCH_WAIT)
         self.log("=== 商店日常结束 ===")
+
+    def _do_shop_super_gift(self):
+        """商店顶部「超值礼包」入口 → 进入日礼包页 → 领免费体力 → 退出
+        - 23h 内已领过则跳过（用户要求一天一次）
+        - 入口坐标 (358, 146)；日礼包页内 OCR 找「免费」点
+        - 退出靠点空白 + 等 + 再点空白（用户描述的回流方式）
+        """
+        now = time.time()
+        if now - self._last_super_gift_at < 23 * 3600:
+            self.log("[超值礼包] 24h 内已领过，跳过")
+            return
+        self.log("[商店] 进超值礼包入口 (358, 146)")
+        self.adb.tap(358, 146)
+        self._sleep(1.5)
+        try:
+            screen = self.adb.screencap()
+        except AdbError:
+            return
+        hits = ocr_find_text(
+            screen, SHOP_KEYWORD_FREE, (0, 200, 540, 875), self.ocr,
+            blocklist=SHOP_AD_BLOCKLIST,
+        )
+        if hits:
+            cx, cy, text = hits[0]
+            self.log(f"[超值礼包] 点「{text.strip()}」({cx},{cy}) 领体力")
+            self.adb.tap(cx, cy)
+            self._sleep(1.5)
+            self.adb.tap(*REWARD_OUTSIDE)
+            self._sleep(1.0)
+            self.adb.tap(*REWARD_OUTSIDE)
+            self._sleep(0.5)
+            self._last_super_gift_at = now
+        else:
+            self.log("[超值礼包] 未找到「免费」按钮，可能今日已领，跳过")
+            self.adb.tap(*REWARD_OUTSIDE)
+            self._sleep(0.5)
 
     def _dismiss_shop_reward(self):
         """关商店礼包弹窗：OCR 找「确定」按钮点击"""
@@ -619,11 +660,29 @@ class Worker:
 
     def _handle_unknown(self, screen):
         """连续 UNKNOWN 时主动脱困
+        - 前置识别 1：15 关通关礼包弹窗 → 点空白关
+        - 前置识别 2：模拟器主页（OCR 命中「正中靶心」）→ 点游戏图标启动
         - 1~2 次：仅打印日志
         - 3 次：OCR 找「确定/关闭/...」按钮点击
         - 6 次：仍 UNKNOWN，点战斗 tab 强行回首页
         - 20 次：重置 count 重来
         """
+        # 前置识别 1：15 关通关礼包弹窗 → 点空白关
+        if ocr_find_text(screen, "通关礼包", UNKNOWN_RESCUE_ROI, self.ocr):
+            self.log("[识别] 15 关通关礼包弹窗，点空白关闭")
+            self.adb.tap(270, 50)
+            self._sleep(0.5)
+            self.adb.tap(530, 200)
+            self._sleep(0.5)
+            return
+
+        # 前置识别 2：模拟器主页 → 点游戏图标启动
+        if ocr_find_text(screen, "正中靶心", (0, 350, 540, 420), self.ocr):
+            self.log("[识别] 模拟器主页，点游戏图标「正中靶心」(334, 382)")
+            self.adb.tap(334, 382)
+            self._sleep(8.0)
+            return
+
         if self.unknown_count <= 3 or self.unknown_count % 10 == 0:
             scores = all_template_scores(screen)
             score_text = " ".join(f"{k}={v:.2f}" for k, v in scores.items())

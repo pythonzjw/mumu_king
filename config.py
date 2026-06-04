@@ -97,7 +97,7 @@ SWIPE_LEFT_DURATION_MS = 400
 # === 左上角体力数字 OCR ROI（"5/33" 格式，OCR 实测中心 (191, 66)）===
 STAMINA_ROI = (140, 40, 240, 90)
 # 体力为 0 时等待时间（秒）：30 分钟
-STAMINA_ZERO_WAIT_SECONDS = 30 * 60
+STAMINA_ZERO_WAIT_SECONDS = 2 * 3600   # 2 小时（30 分钟 → 2 小时）
 
 # === 底部 tab 坐标（540 宽 / 5 等分，y=945 实测）===
 TAB_SHOP = (54, 945)
@@ -150,7 +150,7 @@ SHOP_AFTER_TAP_WAIT     = 1.5
 SHOP_REWARD_CLOSE_WAIT  = 0.6
 SHOP_CONFIRM_KW         = "确定"
 SHOP_CONFIRM_ROI        = (125, 550, 415, 700)   # 屏幕中下区域，「确定」按钮位置
-SHOP_CONFIRM_POLL       = 6
+SHOP_CONFIRM_POLL       = 3   # 6 → 3 缩短轮询，更快兜底点空白（适配「无确定按钮」礼包变种）
 
 # === 城堡日常 ===
 CASTLE_ENTER_WAIT        = 1.5
