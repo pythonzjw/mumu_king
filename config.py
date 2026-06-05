@@ -235,7 +235,13 @@ TIMED_ACTIVITY_SCROLL_TIMES    = 5
 # === 七日狂欢日常 ===
 SEVEN_DAY_CHALLENGE_TAB       = (190, 285)
 SEVEN_DAY_GIFT_TAB            = (360, 285)
-# v0.5.19 删 REDOT_ROI：进了七日狂欢页直接尝试两个 sub-tab，OCR 找不到就跳过
+# 1-7 天 tab 点击位置（OCR 实测）
+SEVEN_DAY_TAB_POSITIONS = [
+    (89, 221),  (151, 221), (213, 221), (275, 221),
+    (337, 221), (399, 221), (461, 220),
+]
+# 1-7 天 tab 红点 ROI（红点固定在 tab 文字右上 ~22px 位置，9x9 大小）
+# 自动从 tap 位置算：ROI = (tap_x + 8, 184, tap_x + 38, 215)
 SEVEN_DAY_CLAIM_ROI           = (300, 280, 540, 875)
 SEVEN_DAY_CLAIM_KW            = "领取"
 SEVEN_DAY_FREE_ROI            = (300, 280, 540, 560)
