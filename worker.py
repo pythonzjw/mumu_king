@@ -622,10 +622,11 @@ class Worker:
         self.log("=== 城堡日常结束 ===")
 
     def _has_redot(self, screen, roi):
-        """HSV 红色像素计数法检测红点是否存在
-        v0.5.16：阈值 50→25 — 七日狂欢 sub-tab 红点是纯小圆点（9×9, 48-52px）
-        而战令城墙红点带 !（16×16, 172px）。两种红点尺寸差 4 倍，统一阈值 25 都能覆盖
-        正常无红点时为 0 像素，离 25 距离 25px，安全
+        """红点检测双保险：HSV 像素计数 + red_dot 模板匹配
+        v0.5.21：
+        - HSV 像素 ≥ 80（强信号，HOME/战令大红!）→ 直接通过
+        - HSV 像素 ≥ 15（弱信号，七日狂欢小圆点 ~61px）→ 模板验证 score ≥ 0.6
+        - 模板加载失败 → 回退到纯 HSV（阈值 25）
         """
         x1, y1, x2, y2 = roi
         if x2 > screen.shape[1] or y2 > screen.shape[0]:
@@ -636,8 +637,21 @@ class Worker:
         hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
         m1 = cv2.inRange(hsv, (0, 120, 120), (10, 255, 255))
         m2 = cv2.inRange(hsv, (170, 120, 120), (180, 255, 255))
-        red_pixels = cv2.countNonZero(cv2.bitwise_or(m1, m2))
-        return red_pixels >= 25
+        n = cv2.countNonZero(cv2.bitwise_or(m1, m2))
+        # 强信号：直接通过
+        if n >= 80:
+            return True
+        # 弱信号：模板验证
+        if n >= 15:
+            try:
+                tpl = _load_template("red_dot.png")
+            except Exception:
+                return n >= 25   # 模板没有时回退纯 HSV
+            if crop.shape[0] >= tpl.shape[0] and crop.shape[1] >= tpl.shape[1]:
+                res = cv2.matchTemplate(crop, tpl, cv2.TM_CCOEFF_NORMED)
+                _, score, _, _ = cv2.minMaxLoc(res)
+                return score >= 0.6
+        return False
 
     def _do_castle_workshop(self):
         """城堡工坊日常：切工坊 tab → 重置到顶 → 逐屏找领取+升级 → 返回法术书 tab"""
