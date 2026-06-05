@@ -399,6 +399,24 @@ def find_home_icon(screen, tpl_name, threshold=MATCH_THRESHOLD):
     return (max_loc[0] + w // 2, max_loc[1] + h // 2)
 
 
+def find_back_button(screen):
+    """模板匹配「返回」按钮，返回 (cx, cy) 或 None
+    战令页底部左下角的米色「返回」按钮 — 用模板匹配找位置，避免硬编码坐标
+    """
+    try:
+        tpl = _load_template("back_button.png")
+    except RecognizeError:
+        return None
+    h, w = tpl.shape[:2]
+    if screen.shape[0] < h or screen.shape[1] < w:
+        return None
+    res = cv2.matchTemplate(screen, tpl, cv2.TM_CCOEFF_NORMED)
+    _, score, _, max_loc = cv2.minMaxLoc(res)
+    if score < MATCH_THRESHOLD:
+        return None
+    return (max_loc[0] + w // 2, max_loc[1] + h // 2)
+
+
 def find_workshop_collect_buttons(screen):
     """全屏查找所有活跃「领取」按钮（模板匹配），返回 [(cx, cy), ...] 按 cy 升序
     模板缺失抛 RecognizeError；未找到返回 []

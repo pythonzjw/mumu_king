@@ -122,11 +122,14 @@ MERGE_BTN           = (466, 672)   # 一键合成弹窗内的「合成」按钮
 # 「一键升级」弹窗内的「确定」OCR 实测 (395, 556) — 但用 OCR 找更稳，不固定坐标
 # 各步等待
 TAB_SWITCH_WAIT     = 1.5
-MERGE_DIALOG_WAIT   = 1.5
+MERGE_DIALOG_WAIT   = 2.0   # v0.5.22 1.5→2.0：合成弹窗动画慢，多等等
 MERGE_REWARD_WAIT   = 2.0
 UPGRADE_DIALOG_WAIT = 1.0
 UPGRADE_CONFIRM_KW  = "确定"
 UPGRADE_CONFIRM_ROI = (250, 500, 540, 610)   # 弹窗中下区域
+# v0.5.22 合成弹窗内「合成」按钮 OCR 兜底（万一 MERGE_BTN 固定坐标位置变了）
+MERGE_BTN_KW        = "合成"
+MERGE_BTN_ROI       = (350, 600, 540, 720)   # 弹窗内合成按钮所在区
 
 # === 红点检测（底部 tab 上方红色感叹号）===
 REDOT_TPL = "redot.png"

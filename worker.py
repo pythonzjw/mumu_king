@@ -33,6 +33,7 @@ from config import (
     ONE_KEY_UPGRADE_BTN, ONE_KEY_MERGE_BTN, MERGE_BTN,
     TAB_SWITCH_WAIT, MERGE_DIALOG_WAIT, MERGE_REWARD_WAIT,
     UPGRADE_DIALOG_WAIT, UPGRADE_CONFIRM_KW, UPGRADE_CONFIRM_ROI,
+    MERGE_BTN_KW, MERGE_BTN_ROI,
     SHOP_ENTER_WAIT, SHOP_OCR_ROI,
     SHOP_SWIPE_UP_FROM, SHOP_SWIPE_UP_TO, SHOP_SWIPE_DURATION_MS,
     SHOP_SWIPE_DOWN_FROM, SHOP_SWIPE_DOWN_TO, SHOP_RESET_TO_TOP_TIMES,
@@ -83,7 +84,7 @@ from recognizer import (
     all_template_scores, make_ocr, RecognizeError,
     detect_redot_tabs, ocr_find_text, is_in_shop_page,
     find_workshop_collect_buttons, _load_template,
-    find_home_icon, HOME_ICON_TPLS,
+    find_home_icon, HOME_ICON_TPLS, find_back_button,
 )
 
 
@@ -416,12 +417,30 @@ class Worker:
             self.log("[装备] 一键升级无弹窗或OCR未命中确定，跳过")
 
     def _do_one_key_merge(self):
-        """前提：已在装备 tab。点一键合成 → 点合成弹窗 → 关 2 次奖励"""
+        """前提：已在装备 tab。点一键合成 → 点合成弹窗 → 关 2 次奖励
+        v0.5.22 OCR 兜底找「合成」按钮（位置可能因游戏 UI 微调）
+        """
         self.log(f"点一键合成 {ONE_KEY_MERGE_BTN}")
         self.adb.tap(*ONE_KEY_MERGE_BTN)
         self._sleep(MERGE_DIALOG_WAIT)
-        self.log(f"点合成按钮 {MERGE_BTN}")
-        self.adb.tap(*MERGE_BTN)
+        # OCR 在弹窗 ROI 找精确「合成」二字按钮
+        hit_pos = None
+        try:
+            screen = self.adb.screencap()
+            hits = ocr_find_text(screen, MERGE_BTN_KW, MERGE_BTN_ROI, self.ocr)
+            # 精确匹配「合成」（排除「一键合成」「合成材料」等）
+            for cx, cy, text in hits:
+                if text.strip() == MERGE_BTN_KW:
+                    hit_pos = (cx, cy)
+                    break
+        except AdbError:
+            pass
+        if hit_pos:
+            self.log(f"[装备] OCR 找到合成按钮 {hit_pos}")
+            self.adb.tap(*hit_pos)
+        else:
+            self.log(f"[装备] OCR 未找到合成按钮，回退固定坐标 {MERGE_BTN}")
+            self.adb.tap(*MERGE_BTN)
         self._sleep(MERGE_REWARD_WAIT)
         self.log(f"点空白关合成奖励 {REWARD_OUTSIDE}")
         self.adb.tap(*REWARD_OUTSIDE)
@@ -621,15 +640,16 @@ class Worker:
         self._force_back_to_battle()
         self.log("=== 城堡日常结束 ===")
 
-    def _has_redot(self, screen, roi):
-        """红点检测双保险：HSV 像素计数 + red_dot 模板匹配
-        v0.5.21：
+    def _has_redot(self, screen, roi, debug_label=None):
+        """红点检测双保险 + 可选 debug 日志
         - HSV 像素 ≥ 80（强信号，HOME/战令大红!）→ 直接通过
         - HSV 像素 ≥ 15（弱信号，七日狂欢小圆点 ~61px）→ 模板验证 score ≥ 0.6
-        - 模板加载失败 → 回退到纯 HSV（阈值 25）
+        - 模板加载失败 → 回退纯 HSV（阈值 25）
+        debug_label: 不为空时打日志（便于调试看实际 HSV px / 模板 score）
         """
         x1, y1, x2, y2 = roi
         if x2 > screen.shape[1] or y2 > screen.shape[0]:
+            if debug_label: self.log(f"[redot/{debug_label}] ROI 越界")
             return False
         crop = screen[y1:y2, x1:x2]
         if crop.size == 0:
@@ -638,19 +658,23 @@ class Worker:
         m1 = cv2.inRange(hsv, (0, 120, 120), (10, 255, 255))
         m2 = cv2.inRange(hsv, (170, 120, 120), (180, 255, 255))
         n = cv2.countNonZero(cv2.bitwise_or(m1, m2))
-        # 强信号：直接通过
         if n >= 80:
+            if debug_label: self.log(f"[redot/{debug_label}] HSV={n}px 强信号 ✓")
             return True
-        # 弱信号：模板验证
         if n >= 15:
             try:
                 tpl = _load_template("red_dot.png")
             except Exception:
-                return n >= 25   # 模板没有时回退纯 HSV
+                ok = n >= 25
+                if debug_label: self.log(f"[redot/{debug_label}] HSV={n}px 无模板回退 → {ok}")
+                return ok
             if crop.shape[0] >= tpl.shape[0] and crop.shape[1] >= tpl.shape[1]:
                 res = cv2.matchTemplate(crop, tpl, cv2.TM_CCOEFF_NORMED)
                 _, score, _, _ = cv2.minMaxLoc(res)
-                return score >= 0.6
+                ok = score >= 0.6
+                if debug_label: self.log(f"[redot/{debug_label}] HSV={n}px tpl={score:.2f} → {ok}")
+                return ok
+        if debug_label: self.log(f"[redot/{debug_label}] HSV={n}px 弱信号不足")
         return False
 
     def _do_castle_workshop(self):
@@ -761,7 +785,7 @@ class Worker:
             screen = self.adb.screencap()
         except AdbError:
             screen = None
-        if screen is not None and self._has_redot(screen, BATTLE_ORDER_WALL_REDOT_ROI):
+        if screen is not None and self._has_redot(screen, BATTLE_ORDER_WALL_REDOT_ROI, debug_label="城墙"):
             self.log("[战令] 城墙 tab 有红点，进入")
             self.adb.tap(*BATTLE_ORDER_WALL_TAB)
             self._sleep(0.8)
@@ -769,7 +793,18 @@ class Worker:
             self._sleep(BATTLE_ORDER_CLAIM_WAIT)
             self.adb.tap(*REWARD_OUTSIDE)
             self._sleep(0.5)
-        self.adb.tap(*REWARD_OUTSIDE)   # v0.5.18 改用空白处关，避免点 BACK 误触 tab
+        # v0.5.22 用模板匹配点真返回按钮（战令必须点真「返回」才能回上级页面）
+        try:
+            screen2 = self.adb.screencap()
+        except AdbError:
+            screen2 = None
+        back_pos = find_back_button(screen2) if screen2 is not None else None
+        if back_pos:
+            self.log(f"[战令] 点返回 {back_pos}")
+            self.adb.tap(*back_pos)
+        else:
+            self.log("[战令] 未找到返回按钮，回退点空白")
+            self.adb.tap(*REWARD_OUTSIDE)
         self._sleep(1.0)
         self.log("=== 战令日常结束 ===")
 
@@ -858,10 +893,11 @@ class Worker:
             return
 
         # 找哪几天有红点（红点固定在每个 day tab 右上 ~22px）
+        # v0.5.22 启用 debug log：每天打 HSV px / 模板 score 便于调试
         days_with_redot = []
         for idx, (tx, ty) in enumerate(SEVEN_DAY_TAB_POSITIONS, start=1):
             roi = (tx + 8, 184, tx + 38, 215)
-            if self._has_redot(screen, roi):
+            if self._has_redot(screen, roi, debug_label=f"7day-第{idx}天"):
                 days_with_redot.append((idx, tx, ty))
 
         if not days_with_redot:
