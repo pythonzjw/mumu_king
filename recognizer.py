@@ -15,6 +15,7 @@ from config import (
     TEMPLATES_DIR, MATCH_THRESHOLD, PERFECT_CLEAR_THRESHOLD, GameState,
     REDOT_TPL, REDOT_ROIS, REDOT_MATCH_THRESHOLD,
     AD_DETECT_ROI, AD_DETECT_KEYWORDS,
+    WORKSHOP_COLLECT_TPL,
 )
 
 # OCR 全局锁：多 worker 共用 GPU（DirectML）时同时推理会 native 崩溃
@@ -367,6 +368,56 @@ def ocr_find_text(screen, keyword, roi, ocr, blocklist=None):
         hits.append((cx, cy, text))
     hits.sort(key=lambda h: h[1])  # 按 y 升序
     return hits
+
+
+# === HOME 顶部图标识别（带红 ! 模板）===
+# 4 张图标模板从「有红 ! 」状态裁出 → 没红 ! 时分数自动跌破 0.8 → 视为无需点
+# 比 redot.png 通用模板更可靠（小红 ! ROI 太小匹配不上）
+HOME_ICON_TPLS = {
+    "BATTLE_ORDER":   "icon_battle_order.png",
+    "ACTIVITY":       "icon_activity.png",
+    "TIMED_ACTIVITY": "icon_timed_activity.png",
+    "SEVEN_DAY":      "icon_seven_day.png",
+}
+
+
+def find_home_icon(screen, tpl_name, threshold=MATCH_THRESHOLD):
+    """模板匹配 HOME 顶部图标，返回 (cx, cy) 中心或 None
+    模板缺失返回 None（不抛错，避免缺一个图标整个日常都崩）
+    """
+    try:
+        tpl = _load_template(tpl_name)
+    except RecognizeError:
+        return None
+    h, w = tpl.shape[:2]
+    if screen.shape[0] < h or screen.shape[1] < w:
+        return None
+    res = cv2.matchTemplate(screen, tpl, cv2.TM_CCOEFF_NORMED)
+    _, score, _, max_loc = cv2.minMaxLoc(res)
+    if score < threshold:
+        return None
+    return (max_loc[0] + w // 2, max_loc[1] + h // 2)
+
+
+def find_workshop_collect_buttons(screen):
+    """全屏查找所有活跃「领取」按钮（模板匹配），返回 [(cx, cy), ...] 按 cy 升序
+    模板缺失抛 RecognizeError；未找到返回 []
+    """
+    tpl = _load_template(WORKSHOP_COLLECT_TPL)
+    th, tw = tpl.shape[:2]
+    if screen.shape[0] < th or screen.shape[1] < tw:
+        return []
+    res = cv2.matchTemplate(screen, tpl, cv2.TM_CCOEFF_NORMED)
+    locs = np.where(res >= MATCH_THRESHOLD)
+    positions = []
+    prev_cy = -999
+    for pt in sorted(zip(*locs[::-1]), key=lambda p: p[1]):
+        cx = pt[0] + tw // 2
+        cy = pt[1] + th // 2
+        if cy - prev_cy > th * 0.5:
+            positions.append((cx, cy))
+            prev_cy = cy
+    return positions
 
 
 def is_in_shop_page(screen, ocr):

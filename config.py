@@ -128,9 +128,10 @@ REDOT_MATCH_THRESHOLD = 0.75
 # HSV 实测红点中心：SHOP(95,871) / EQUIPMENT(203,871) / CASTLE(419,871)，皆 25×25
 # ROI 给 ±25px 容差
 REDOT_ROIS = {
-    "SHOP":      (70, 850, 130, 905),
-    "EQUIPMENT": (178, 850, 238, 905),
-    "CASTLE":    (394, 850, 454, 905),
+    "SHOP":           (70,  850, 130, 905),
+    "EQUIPMENT":      (178, 850, 238, 905),
+    "CASTLE":         (394, 850, 454, 905),
+    # HOME 顶部图标红点不在这里：用 recognizer.find_home_icon 模板匹配带红 ! 的图标
 }
 
 # === 商店日常 ===
@@ -198,6 +199,63 @@ UNKNOWN_RESCUE_OCR_AT    = 3
 UNKNOWN_RESCUE_TAB_DELTA = 3
 UNKNOWN_RESCUE_KEYWORDS  = ("确定", "关闭", "取消", "我知道了", "返回", "跳过")
 UNKNOWN_RESCUE_ROI       = (0, 90, 540, 875)
+
+# === HOME 顶部图标入口（坐标由 recognizer.find_home_icon 动态返回，不写死） ===
+
+# === 战令日常 ===
+BATTLE_ORDER_WALL_TAB        = (175, 194)
+BATTLE_ORDER_WALL_REDOT_ROI  = (150, 165, 215, 210)
+BATTLE_ORDER_CLAIM_BTN       = (430, 912)
+BATTLE_ORDER_BACK_BTN        = (100, 912)
+BATTLE_ORDER_ENTER_WAIT      = 1.5
+BATTLE_ORDER_CLAIM_WAIT      = 0.8
+
+# === 活动日常 ===
+ACTIVITY_CLAIM_ROI    = (300, 200, 540, 875)
+ACTIVITY_CLAIM_KW     = "领取"
+ACTIVITY_CLOSE_BTN    = (58, 884)
+ACTIVITY_ENTER_WAIT   = 1.5
+ACTIVITY_AFTER_CLAIM  = 0.8
+
+# === 限时活动日常 ===
+TIMED_ACTIVITY_SIGN_KW    = "签到"
+TIMED_ACTIVITY_SIGN_ROI   = (300, 240, 540, 875)
+TIMED_ACTIVITY_CLOSE_BTN  = (58, 884)
+TIMED_ACTIVITY_ENTER_WAIT = 1.5
+TIMED_ACTIVITY_AFTER_SIGN = 0.8
+
+# === 七日狂欢日常 ===
+SEVEN_DAY_CHALLENGE_TAB       = (150, 245)
+SEVEN_DAY_GIFT_TAB            = (380, 245)
+SEVEN_DAY_CHALLENGE_REDOT_ROI = (105, 225, 213, 268)
+SEVEN_DAY_GIFT_REDOT_ROI      = (335, 225, 450, 268)
+SEVEN_DAY_CLAIM_ROI           = (300, 280, 540, 875)
+SEVEN_DAY_CLAIM_KW            = "领取"
+SEVEN_DAY_FREE_ROI            = (300, 280, 540, 560)
+SEVEN_DAY_FREE_KW             = "免费"
+SEVEN_DAY_CLOSE_BTN           = (58, 884)
+SEVEN_DAY_ENTER_WAIT          = 1.5
+SEVEN_DAY_AFTER_TAP           = 0.8
+
+# === 城堡工坊日常 ===
+WORKSHOP_TAB_BTN             = (265, 838)
+WORKSHOP_FASHI_TAB_BTN       = (85, 838)
+WORKSHOP_COLLECT_TPL         = "workshop_collect_btn.png"
+WORKSHOP_UPGRADE_KW          = "升级"
+WORKSHOP_UPGRADE_ROI         = (0, 380, 220, 875)
+WORKSHOP_CONFIRM_ROI         = (300, 610, 540, 710)
+WORKSHOP_CONFIRM_KW          = "确定"
+WORKSHOP_RESET_TO_TOP_TIMES  = 3
+WORKSHOP_SCROLL_DOWN_FROM    = (270, 450)
+WORKSHOP_SCROLL_DOWN_TO      = (270, 700)
+WORKSHOP_SCROLL_UP_FROM      = (270, 700)
+WORKSHOP_SCROLL_UP_TO        = (270, 450)
+WORKSHOP_SCROLL_DUR_MS       = 400
+WORKSHOP_SCROLL_TIMES        = 5
+WORKSHOP_ENTER_WAIT          = 1.2
+WORKSHOP_AFTER_UPGRADE       = 1.0
+WORKSHOP_POPUP_WAIT          = 1.5
+WORKSHOP_AFTER_COLLECT       = 0.8
 
 # === debug 截图环形覆盖 ===
 DEBUG_MAX_STEP_FILES     = 5000

@@ -8,3 +8,4 @@ debug_run/
 build/
 dist/
 *.spec
+templates_preview/
