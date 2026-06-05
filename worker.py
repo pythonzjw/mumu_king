@@ -60,7 +60,6 @@ from config import (
     TIMED_ACTIVITY_SCROLL_FROM, TIMED_ACTIVITY_SCROLL_TO,
     TIMED_ACTIVITY_SCROLL_DUR_MS, TIMED_ACTIVITY_SCROLL_TIMES,
     SEVEN_DAY_CHALLENGE_TAB, SEVEN_DAY_GIFT_TAB,
-    SEVEN_DAY_CHALLENGE_REDOT_ROI, SEVEN_DAY_GIFT_REDOT_ROI,
     SEVEN_DAY_CLAIM_ROI, SEVEN_DAY_CLAIM_KW,
     SEVEN_DAY_FREE_ROI, SEVEN_DAY_FREE_KW,
     SEVEN_DAY_ENTER_WAIT, SEVEN_DAY_AFTER_TAP,
@@ -827,64 +826,57 @@ class Worker:
         self.log("=== 限时活动日常结束 ===")
 
     def _do_seven_day_daily(self, icon_pos):
-        """七日狂欢：检查每日挑战（领取所有）+ 每日好礼（点免费一次）→ 关闭"""
+        """七日狂欢：进入页（默认每日挑战 sub-tab）→ 领取所有 →
+        切每日好礼 → 点免费一次 → 关闭
+
+        v0.5.19 简化：HOME 图标已带红 ! 才进，进去就尝试两个 sub-tab
+        不再判定 sub-tab 红点（ROI 可能因游戏 UI 变化漂移）
+        OCR 找不到「领取」/「免费」就跳过，符合「进了就尝试」逻辑
+        """
         self.log(f"=== 七日狂欢日常开始 (入口 {icon_pos}) ===")
         self.adb.tap(*icon_pos)
         self._sleep(SEVEN_DAY_ENTER_WAIT)
 
-        try:
-            screen = self.adb.screencap()
-        except AdbError:
-            self.adb.tap(*REWARD_OUTSIDE)   # v0.5.18 改用空白处关
-            self._sleep(0.8)
-            return
+        # 1. 每日挑战 sub-tab（默认选中）→ OCR 找领取，循环点
+        self.adb.tap(*SEVEN_DAY_CHALLENGE_TAB)   # 显式点一下确保在挑战 sub-tab
+        self._sleep(0.6)
+        for _ in range(10):
+            if not self.running:
+                break
+            try:
+                screen = self.adb.screencap()
+            except AdbError:
+                break
+            hits = ocr_find_text(screen, SEVEN_DAY_CLAIM_KW, SEVEN_DAY_CLAIM_ROI, self.ocr)
+            if not hits:
+                break
+            cx, cy, _ = hits[0]
+            self.log(f"[七日狂欢/挑战] 点领取 ({cx},{cy})")
+            self.adb.tap(cx, cy)
+            self._sleep(SEVEN_DAY_AFTER_TAP)
+            self.adb.tap(*REWARD_OUTSIDE)
+            self._sleep(0.5)
 
-        # 每日挑战 sub-tab：红点检查 → 领取所有
-        if self._has_redot(screen, SEVEN_DAY_CHALLENGE_REDOT_ROI):
-            self.adb.tap(*SEVEN_DAY_CHALLENGE_TAB)
-            self._sleep(0.8)
-            for _ in range(10):
-                if not self.running:
-                    break
-                try:
-                    screen = self.adb.screencap()
-                except AdbError:
-                    break
-                hits = ocr_find_text(screen, SEVEN_DAY_CLAIM_KW, SEVEN_DAY_CLAIM_ROI, self.ocr)
-                if not hits:
-                    break
-                cx, cy, _ = hits[0]
-                self.log(f"[七日狂欢/挑战] 点领取 ({cx},{cy})")
-                self.adb.tap(cx, cy)
-                self._sleep(SEVEN_DAY_AFTER_TAP)
-                self.adb.tap(*REWARD_OUTSIDE)
-                self._sleep(0.5)
-
-        # 每日好礼 sub-tab：红点检查 → 点免费一次
+        # 2. 切每日好礼 sub-tab → OCR 找免费，点一次
+        self.adb.tap(*SEVEN_DAY_GIFT_TAB)
+        self._sleep(0.8)
         try:
             screen = self.adb.screencap()
         except AdbError:
             screen = None
-        if screen is not None and self._has_redot(screen, SEVEN_DAY_GIFT_REDOT_ROI):
-            self.adb.tap(*SEVEN_DAY_GIFT_TAB)
-            self._sleep(0.8)
-            try:
-                screen = self.adb.screencap()
-            except AdbError:
-                screen = None
-            if screen is not None:
-                hits = ocr_find_text(screen, SEVEN_DAY_FREE_KW, SEVEN_DAY_FREE_ROI, self.ocr)
-                if hits:
-                    cx, cy, _ = hits[0]
-                    self.log(f"[七日狂欢/好礼] 点免费 ({cx},{cy})")
-                    self.adb.tap(cx, cy)
-                    self._sleep(SEVEN_DAY_AFTER_TAP)
-                    self.adb.tap(*REWARD_OUTSIDE)
-                    self._sleep(0.5)
-                else:
-                    self.log("[七日狂欢/好礼] 未找到「免费」按钮")
+        if screen is not None:
+            hits = ocr_find_text(screen, SEVEN_DAY_FREE_KW, SEVEN_DAY_FREE_ROI, self.ocr)
+            if hits:
+                cx, cy, _ = hits[0]
+                self.log(f"[七日狂欢/好礼] 点免费 ({cx},{cy})")
+                self.adb.tap(cx, cy)
+                self._sleep(SEVEN_DAY_AFTER_TAP)
+                self.adb.tap(*REWARD_OUTSIDE)
+                self._sleep(0.5)
+            else:
+                self.log("[七日狂欢/好礼] 未找到「免费」按钮")
 
-        self.adb.tap(*REWARD_OUTSIDE)   # v0.5.18 改用空白处关
+        self.adb.tap(*REWARD_OUTSIDE)   # 关弹窗
         self._sleep(0.8)
         self.log("=== 七日狂欢日常结束 ===")
 

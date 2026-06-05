@@ -235,9 +235,7 @@ TIMED_ACTIVITY_SCROLL_TIMES    = 5
 # === 七日狂欢日常 ===
 SEVEN_DAY_CHALLENGE_TAB       = (190, 285)
 SEVEN_DAY_GIFT_TAB            = (360, 285)
-# 实测 sub-tab 右上小红点位置：挑战 (247, 273) / 好礼 (415, 273)
-SEVEN_DAY_CHALLENGE_REDOT_ROI = (220, 260, 280, 295)
-SEVEN_DAY_GIFT_REDOT_ROI      = (390, 260, 450, 295)
+# v0.5.19 删 REDOT_ROI：进了七日狂欢页直接尝试两个 sub-tab，OCR 找不到就跳过
 SEVEN_DAY_CLAIM_ROI           = (300, 280, 540, 875)
 SEVEN_DAY_CLAIM_KW            = "领取"
 SEVEN_DAY_FREE_ROI            = (300, 280, 540, 560)
