@@ -93,8 +93,11 @@ CHEST_POSITIONS = [
     (378, 495),    # 右宝箱
 ]
 CHEST_WAIT = 1.8   # 1.0 → 1.8：等中间宝箱弹奖励的动画延迟，避免下一轮太早跳过
-# 「获得奖励」弹窗外的安全点击点（顶部账号栏下方空白处）
-REWARD_OUTSIDE = (270, 200)
+# 「获得奖励」弹窗外的安全点击点
+# v0.5.16：从 (270, 200) 上移到 (270, 30) — 跟顶部账号栏用户名同高
+# 原 (270, 200) 在七日狂欢/活动等大弹窗内会误点弹窗里的内容
+# 账号栏总是显示在最上层，x=270 是用户名末尾右侧空白，绝对安全
+REWARD_OUTSIDE = (270, 30)
 # 完美通关三宝箱处理完后的左滑：从 (x1,y1) 滑到 (x2,y2)，毫秒
 SWIPE_LEFT_FROM = (450, 480)
 SWIPE_LEFT_TO = (90, 480)
@@ -233,10 +236,11 @@ TIMED_ACTIVITY_SCROLL_DUR_MS   = 400
 TIMED_ACTIVITY_SCROLL_TIMES    = 5
 
 # === 七日狂欢日常 ===
-SEVEN_DAY_CHALLENGE_TAB       = (150, 245)
-SEVEN_DAY_GIFT_TAB            = (380, 245)
-SEVEN_DAY_CHALLENGE_REDOT_ROI = (105, 225, 213, 268)
-SEVEN_DAY_GIFT_REDOT_ROI      = (335, 225, 450, 268)
+SEVEN_DAY_CHALLENGE_TAB       = (190, 285)
+SEVEN_DAY_GIFT_TAB            = (360, 285)
+# 实测 sub-tab 右上小红点位置：挑战 (247, 273) / 好礼 (415, 273)
+SEVEN_DAY_CHALLENGE_REDOT_ROI = (220, 260, 280, 295)
+SEVEN_DAY_GIFT_REDOT_ROI      = (390, 260, 450, 295)
 SEVEN_DAY_CLAIM_ROI           = (300, 280, 540, 875)
 SEVEN_DAY_CLAIM_KW            = "领取"
 SEVEN_DAY_FREE_ROI            = (300, 280, 540, 560)

@@ -622,9 +622,10 @@ class Worker:
         self.log("=== 城堡日常结束 ===")
 
     def _has_redot(self, screen, roi):
-        """HSV 红色像素计数法检测红 ! 是否存在
-        v0.5.15 改：redot.png 模板对小 ROI（战令城墙、七日狂欢 sub-tab）失效（实测匹配分 0.08），
-        改用 HSV 亮红色像素数量。红 ! 实测面积约 400 像素，阈值 50 是安全下限
+        """HSV 红色像素计数法检测红点是否存在
+        v0.5.16：阈值 50→25 — 七日狂欢 sub-tab 红点是纯小圆点（9×9, 48-52px）
+        而战令城墙红点带 !（16×16, 172px）。两种红点尺寸差 4 倍，统一阈值 25 都能覆盖
+        正常无红点时为 0 像素，离 25 距离 25px，安全
         """
         x1, y1, x2, y2 = roi
         if x2 > screen.shape[1] or y2 > screen.shape[0]:
@@ -636,7 +637,7 @@ class Worker:
         m1 = cv2.inRange(hsv, (0, 120, 120), (10, 255, 255))
         m2 = cv2.inRange(hsv, (170, 120, 120), (180, 255, 255))
         red_pixels = cv2.countNonZero(cv2.bitwise_or(m1, m2))
-        return red_pixels >= 50
+        return red_pixels >= 25
 
     def _do_castle_workshop(self):
         """城堡工坊日常：切工坊 tab → 重置到顶 → 逐屏找领取+升级 → 返回法术书 tab"""
@@ -893,7 +894,7 @@ class Worker:
         v0.5.10 改：完全去掉 v0.5.8 加的「连点屏幕中心 3 次」
         — SCREEN_CENTER=(270,480) 在城堡法术书页正好是火球术图标位置，
         会触发法术书升级覆盖战斗 tab 导致死循环。
-        改用 REWARD_OUTSIDE=(270,200) 顶部账号栏下方安全空白关弹窗。
+        改用 REWARD_OUTSIDE 顶部账号栏内部空白关弹窗（v0.5.16 上移到 y=30）。
         """
         for attempt in range(5):
             if not self.running:
