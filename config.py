@@ -51,9 +51,12 @@ SKILL_SELECT_DELAY = 0.3     # 技能选择后延迟
 
 # === 图像识别配置 ===
 MATCH_THRESHOLD = 0.8        # 模板匹配阈值（0~1，越高越严格）
-# PERFECT_CLEAR 单独阈值（v0.5.12：模板换成右宝箱区，含「100%血量通关奖励」整两行字 —
-# 未通关页文字相同只是圆点白空心 → 整体相似度高达 0.85，需更严阈值区分）
-PERFECT_CLEAR_THRESHOLD = 0.95
+# PERFECT_CLEAR 单独阈值
+# 模板取「100% 圆点黑实心 + 通关奖励」整两行字
+# - 未通关页文字相同只是圆点白空心 → 0.88（不能误识）
+# - 3 宝箱全领（绿勾覆盖）状态 → 0.945（v0.5.15 必须能识别，否则卡关）
+# 0.93 落在中间，离两端各 ~0.05 安全距离
+PERFECT_CLEAR_THRESHOLD = 0.93
 
 # === 游戏状态枚举（字符串，便于日志可读）===
 class GameState:
@@ -223,6 +226,11 @@ TIMED_ACTIVITY_SIGN_ROI   = (300, 240, 540, 875)
 TIMED_ACTIVITY_CLOSE_BTN  = (58, 884)
 TIMED_ACTIVITY_ENTER_WAIT = 1.5
 TIMED_ACTIVITY_AFTER_SIGN = 0.8
+# 找不到签到时下滑找：从 (270, 700) 滑到 (270, 300)，最多 5 次
+TIMED_ACTIVITY_SCROLL_FROM     = (270, 700)
+TIMED_ACTIVITY_SCROLL_TO       = (270, 300)
+TIMED_ACTIVITY_SCROLL_DUR_MS   = 400
+TIMED_ACTIVITY_SCROLL_TIMES    = 5
 
 # === 七日狂欢日常 ===
 SEVEN_DAY_CHALLENGE_TAB       = (150, 245)

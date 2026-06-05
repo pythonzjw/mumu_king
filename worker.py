@@ -57,6 +57,8 @@ from config import (
     ACTIVITY_ENTER_WAIT, ACTIVITY_AFTER_CLAIM,
     TIMED_ACTIVITY_SIGN_KW, TIMED_ACTIVITY_SIGN_ROI, TIMED_ACTIVITY_CLOSE_BTN,
     TIMED_ACTIVITY_ENTER_WAIT, TIMED_ACTIVITY_AFTER_SIGN,
+    TIMED_ACTIVITY_SCROLL_FROM, TIMED_ACTIVITY_SCROLL_TO,
+    TIMED_ACTIVITY_SCROLL_DUR_MS, TIMED_ACTIVITY_SCROLL_TIMES,
     SEVEN_DAY_CHALLENGE_TAB, SEVEN_DAY_GIFT_TAB,
     SEVEN_DAY_CHALLENGE_REDOT_ROI, SEVEN_DAY_GIFT_REDOT_ROI,
     SEVEN_DAY_CLAIM_ROI, SEVEN_DAY_CLAIM_KW,
@@ -620,21 +622,21 @@ class Worker:
         self.log("=== 城堡日常结束 ===")
 
     def _has_redot(self, screen, roi):
-        """在 roi 内检测是否有红点模板命中（复用 redot.png）"""
-        try:
-            tpl = _load_template("redot.png")
-        except Exception:
-            return False
+        """HSV 红色像素计数法检测红 ! 是否存在
+        v0.5.15 改：redot.png 模板对小 ROI（战令城墙、七日狂欢 sub-tab）失效（实测匹配分 0.08），
+        改用 HSV 亮红色像素数量。红 ! 实测面积约 400 像素，阈值 50 是安全下限
+        """
         x1, y1, x2, y2 = roi
         if x2 > screen.shape[1] or y2 > screen.shape[0]:
             return False
         crop = screen[y1:y2, x1:x2]
-        th, tw = tpl.shape[:2]
-        if crop.shape[0] < th or crop.shape[1] < tw:
+        if crop.size == 0:
             return False
-        res = cv2.matchTemplate(crop, tpl, cv2.TM_CCOEFF_NORMED)
-        _, score, _, _ = cv2.minMaxLoc(res)
-        return score >= REDOT_MATCH_THRESHOLD
+        hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+        m1 = cv2.inRange(hsv, (0, 120, 120), (10, 255, 255))
+        m2 = cv2.inRange(hsv, (170, 120, 120), (180, 255, 255))
+        red_pixels = cv2.countNonZero(cv2.bitwise_or(m1, m2))
+        return red_pixels >= 50
 
     def _do_castle_workshop(self):
         """城堡工坊日常：切工坊 tab → 重置到顶 → 逐屏找领取+升级 → 返回法术书 tab"""
@@ -782,30 +784,43 @@ class Worker:
         self.log("=== 活动日常结束 ===")
 
     def _do_timed_activity_daily(self, icon_pos):
-        """限时活动：进入 → 找「签到」按钮点一次 → 关闭"""
+        """限时活动：进入 → 找「签到」按钮（找不到则下滑找）→ 点一次 → 关闭"""
         self.log(f"=== 限时活动日常开始 (入口 {icon_pos}) ===")
         self.adb.tap(*icon_pos)
         self._sleep(TIMED_ACTIVITY_ENTER_WAIT)
-        try:
-            screen = self.adb.screencap()
-        except AdbError:
-            self.adb.tap(*TIMED_ACTIVITY_CLOSE_BTN)
-            self._sleep(0.8)
-            return
-        hits = ocr_find_text(screen, TIMED_ACTIVITY_SIGN_KW, TIMED_ACTIVITY_SIGN_ROI, self.ocr,
-                              blocklist=("继续领取",))
-        if hits:
-            cx, cy, text = hits[0]
-            if text.strip() == TIMED_ACTIVITY_SIGN_KW:
-                self.log(f"[限时活动] 点签到 ({cx},{cy})")
-                self.adb.tap(cx, cy)
-                self._sleep(TIMED_ACTIVITY_AFTER_SIGN)
-                self.adb.tap(*REWARD_OUTSIDE)
-                self._sleep(0.5)
-            else:
-                self.log(f"[限时活动] 签到按钮文本「{text.strip()}」不精确匹配，跳过")
-        else:
-            self.log("[限时活动] 未找到「签到」按钮，可能今日已签")
+
+        signed = False
+        # 最多下滑 N 次找签到（首屏 + N 屏滚动）
+        for scroll_idx in range(TIMED_ACTIVITY_SCROLL_TIMES + 1):
+            if not self.running:
+                break
+            try:
+                screen = self.adb.screencap()
+            except AdbError:
+                break
+            hits = ocr_find_text(screen, TIMED_ACTIVITY_SIGN_KW, TIMED_ACTIVITY_SIGN_ROI, self.ocr,
+                                  blocklist=("继续领取",))
+            # 找精确「签到」按钮（不含「继续领取」/「未开起」等其他文本）
+            for cx, cy, text in hits:
+                if text.strip() == TIMED_ACTIVITY_SIGN_KW:
+                    self.log(f"[限时活动] 点签到 ({cx},{cy})")
+                    self.adb.tap(cx, cy)
+                    self._sleep(TIMED_ACTIVITY_AFTER_SIGN)
+                    self.adb.tap(*REWARD_OUTSIDE)
+                    self._sleep(0.5)
+                    signed = True
+                    break
+            if signed:
+                break
+            # 没找到 → 下滑找下一屏（最后一轮不滑）
+            if scroll_idx < TIMED_ACTIVITY_SCROLL_TIMES:
+                self.log(f"[限时活动] 第 {scroll_idx+1} 屏没找到签到，下滑")
+                self.adb.swipe(*TIMED_ACTIVITY_SCROLL_FROM, *TIMED_ACTIVITY_SCROLL_TO,
+                                TIMED_ACTIVITY_SCROLL_DUR_MS)
+                self._sleep(0.6)
+
+        if not signed:
+            self.log("[限时活动] 全屏遍历没找到「签到」按钮，可能今日已签")
         self.adb.tap(*TIMED_ACTIVITY_CLOSE_BTN)
         self._sleep(0.8)
         self.log("=== 限时活动日常结束 ===")
