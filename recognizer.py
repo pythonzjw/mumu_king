@@ -12,7 +12,7 @@ import cv2
 import numpy as np
 
 from config import (
-    TEMPLATES_DIR, MATCH_THRESHOLD, GameState,
+    TEMPLATES_DIR, MATCH_THRESHOLD, PERFECT_CLEAR_THRESHOLD, GameState,
     REDOT_TPL, REDOT_ROIS, REDOT_MATCH_THRESHOLD,
     AD_DETECT_ROI, AD_DETECT_KEYWORDS,
 )
@@ -95,7 +95,7 @@ def detect_state(screen, ocr=None):
         return GameState.WHEEL
 
     score_perfect, _ = _try_match(screen, TPL_PERFECT)
-    if score_perfect >= MATCH_THRESHOLD:
+    if score_perfect >= PERFECT_CLEAR_THRESHOLD:
         return GameState.PERFECT_CLEAR
 
     score_skill, _ = _try_match(screen, TPL_SKILL_TITLE)

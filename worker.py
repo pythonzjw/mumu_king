@@ -74,8 +74,6 @@ class Worker:
         self.step_count = 0
         # 完美通关页已点的宝箱数（0~3）；点完 3 个后左滑回原页面
         self.chests_clicked = 0
-        # 超值礼包上次领取时间戳：23h 内不再重复领（用户要求一天一次）
-        self._last_super_gift_at = 0
         # OCR 实例：run() 第一行 lazy 创建，多 worker 并行加载
         self.ocr = None
         if self.debug:
@@ -402,9 +400,6 @@ class Worker:
         self.log(f"[商店] 已下滑 {SHOP_RESET_TO_TOP_TIMES} 次重置到顶部")
         self._sleep(0.5)
 
-        # 顶部超值礼包入口：每天免费领体力 6（一天一次，23h 冷却）
-        self._do_shop_super_gift()
-
         clicked = set()
         prev_swipe_signature = None
         empty_swipe_count = 0    # 连续上滑后扫不到「免费」的次数，>= SHOP_MAX_EMPTY_SWIPE 才退
@@ -481,42 +476,6 @@ class Worker:
         self.adb.tap(*TAB_BATTLE)
         self._sleep(TAB_SWITCH_WAIT)
         self.log("=== 商店日常结束 ===")
-
-    def _do_shop_super_gift(self):
-        """商店顶部「超值礼包」入口 → 进入日礼包页 → 领免费体力 → 退出
-        - 23h 内已领过则跳过（用户要求一天一次）
-        - 入口坐标 (358, 146)；日礼包页内 OCR 找「免费」点
-        - 退出靠点空白 + 等 + 再点空白（用户描述的回流方式）
-        """
-        now = time.time()
-        if now - self._last_super_gift_at < 23 * 3600:
-            self.log("[超值礼包] 24h 内已领过，跳过")
-            return
-        self.log("[商店] 进超值礼包入口 (358, 146)")
-        self.adb.tap(358, 146)
-        self._sleep(1.5)
-        try:
-            screen = self.adb.screencap()
-        except AdbError:
-            return
-        hits = ocr_find_text(
-            screen, SHOP_KEYWORD_FREE, (0, 200, 540, 875), self.ocr,
-            blocklist=SHOP_AD_BLOCKLIST,
-        )
-        if hits:
-            cx, cy, text = hits[0]
-            self.log(f"[超值礼包] 点「{text.strip()}」({cx},{cy}) 领体力")
-            self.adb.tap(cx, cy)
-            self._sleep(1.5)
-            self.adb.tap(*REWARD_OUTSIDE)
-            self._sleep(1.0)
-            self.adb.tap(*REWARD_OUTSIDE)
-            self._sleep(0.5)
-            self._last_super_gift_at = now
-        else:
-            self.log("[超值礼包] 未找到「免费」按钮，可能今日已领，跳过")
-            self.adb.tap(*REWARD_OUTSIDE)
-            self._sleep(0.5)
 
     def _dismiss_shop_reward(self):
         """关商店礼包弹窗：OCR 找「确定」按钮点击"""

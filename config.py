@@ -51,6 +51,9 @@ SKILL_SELECT_DELAY = 0.3     # 技能选择后延迟
 
 # === 图像识别配置 ===
 MATCH_THRESHOLD = 0.8        # 模板匹配阈值（0~1，越高越严格）
+# PERFECT_CLEAR 单独阈值（v0.5.12：模板换成右宝箱区，含「100%血量通关奖励」整两行字 —
+# 未通关页文字相同只是圆点白空心 → 整体相似度高达 0.85，需更严阈值区分）
+PERFECT_CLEAR_THRESHOLD = 0.95
 
 # === 游戏状态枚举（字符串，便于日志可读）===
 class GameState:
