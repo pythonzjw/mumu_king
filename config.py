@@ -77,6 +77,8 @@ DEFAULT_SKILL_PRIORITY = [
     "冰锥", "冰霜", "额外", "爆炸",
     "滚木", "火球", "聚焦", "伤害", "穿透",
 ]
+# === 禁选技能关键字（substring 匹配；命中则优先跳过，除非 3 张全被禁）===
+BANNED_SKILL_KEYWORDS = []
 
 # === 技能卡 OCR ROI（540×960 基准，OCR 实测：3 张卡顶部 y=342，x ≈ 95/270/444）===
 SKILL_CARD_ROIS = [
@@ -160,6 +162,7 @@ SHOP_SWIPE_DOWN_TO      = (270, 750)
 SHOP_KEYWORD_FREE       = "免费"
 SHOP_AD_BLOCKLIST       = ("立即下载", "下载详情", "安装")
 SHOP_AFTER_TAP_WAIT     = 1.5
+SHOP_AFTER_SCROLL_WAIT  = 1.0
 SHOP_REWARD_CLOSE_WAIT  = 0.6
 SHOP_CONFIRM_KW         = "确定"
 SHOP_CONFIRM_ROI        = (125, 550, 415, 700)   # 屏幕中下区域，「确定」按钮位置
@@ -251,6 +254,7 @@ SEVEN_DAY_FREE_ROI            = (300, 280, 540, 560)
 SEVEN_DAY_FREE_KW             = "免费"
 SEVEN_DAY_ENTER_WAIT          = 1.5
 SEVEN_DAY_AFTER_TAP           = 0.8
+SEVEN_DAY_PAGE_WAIT           = 1.0
 
 # === 城堡工坊日常 ===
 WORKSHOP_TAB_BTN             = (265, 838)

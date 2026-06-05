@@ -11,11 +11,13 @@ from worker import Worker
 
 
 class BotManager:
-    def __init__(self, adb_path, serials, skill_priority, log_fn, debug=False):
+    def __init__(self, adb_path, serials, skill_priority, log_fn, debug=False,
+                 banned_skill_keywords=None):
         self.adb_path = adb_path
         # 保留 serials 字段名；接受任意格式（127.0.0.1:16384 / emulator-5554 / 313d4194）
         self.serials = list(serials)
         self.skill_priority = list(skill_priority)
+        self.banned_skill_keywords = list(banned_skill_keywords or [])
         self.log_fn = log_fn
         self.debug = debug
         self.workers = []
@@ -50,6 +52,7 @@ class BotManager:
                 name=serial,
                 log_fn=self.log_fn,
                 skill_priority=self.skill_priority,
+                banned_skill_keywords=self.banned_skill_keywords,
                 debug=self.debug,
             )
             t = threading.Thread(target=worker.run, daemon=True)

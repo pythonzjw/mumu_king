@@ -8,7 +8,7 @@ import tkinter as tk
 from tkinter import scrolledtext, messagebox
 import threading
 
-from config import ADB_PATH, DEFAULT_SKILL_PRIORITY, MUMU_CANDIDATE_PORTS
+from config import ADB_PATH, DEFAULT_SKILL_PRIORITY, BANNED_SKILL_KEYWORDS, MUMU_CANDIDATE_PORTS
 import settings
 
 
@@ -47,7 +47,7 @@ class App:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("MuMu 多开战斗自动化")
-        self.root.geometry("700x780")
+        self.root.geometry("700x820")
         self.root.resizable(False, False)
         self.manager = None
         # serial → tk.BooleanVar，记录每个设备是否被勾选
@@ -99,6 +99,13 @@ class App:
         self.priority_var = tk.StringVar(value=", ".join(DEFAULT_SKILL_PRIORITY))
         tk.Entry(f3, textvariable=self.priority_var).pack(fill="x", pady=2)
 
+        # 禁止选择关键字
+        f3b = tk.Frame(self.root, padx=10)
+        f3b.pack(fill="x", pady=(0, 5))
+        tk.Label(f3b, text="禁止选择关键字（逗号分隔，命中则跳过）:").pack(anchor="w")
+        self.banned_var = tk.StringVar(value=", ".join(BANNED_SKILL_KEYWORDS))
+        tk.Entry(f3b, textvariable=self.banned_var).pack(fill="x", pady=2)
+
         # 控制按钮 + debug
         f4 = tk.Frame(self.root, padx=10)
         f4.pack(fill="x", pady=5)
@@ -137,6 +144,10 @@ class App:
             p = self.settings["priority"]
             if isinstance(p, list) and p:
                 self.priority_var.set(", ".join(p))
+        if "banned_skill_keywords" in self.settings:
+            banned = self.settings["banned_skill_keywords"]
+            if isinstance(banned, list):
+                self.banned_var.set(", ".join(banned))
         # 上次勾选过的 serial：以"手动加入"方式预填，用户不扫描也能直接开始
         last_serials = self.settings.get("serials", [])
         for s in last_serials:
@@ -152,6 +163,7 @@ class App:
         settings.save({
             "adb_path": self.adb_var.get().strip(),
             "priority": [s.strip() for s in self.priority_var.get().split(",") if s.strip()],
+            "banned_skill_keywords": [s.strip() for s in self.banned_var.get().split(",") if s.strip()],
             "serials": self._selected_serials(),
         })
 
@@ -341,6 +353,7 @@ class App:
             priority = [s.strip() for s in priority_text.split(",") if s.strip()]
         else:
             priority = list(DEFAULT_SKILL_PRIORITY)
+        banned = [s.strip() for s in self.banned_var.get().split(",") if s.strip()]
 
         # 持久化当前设置，下次启动自动恢复
         self._save_settings()
@@ -350,6 +363,7 @@ class App:
             adb_path=adb_path,
             serials=serials,
             skill_priority=priority,
+            banned_skill_keywords=banned,
             log_fn=self._append_log,
             debug=self.debug_var.get(),
         )

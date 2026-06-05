@@ -1,13 +1,13 @@
 """
 入口
 - 默认 GUI
-- --nogui 命令行模式：python main.py --nogui --serials=127.0.0.1:16384,emulator-5554 --priority="A,B" --debug
+- --nogui 命令行模式：python main.py --nogui --serials=127.0.0.1:16384,emulator-5554 --priority="A,B" --banned="C,D" --debug
   也兼容老的 --ports=16384,16416（自动拼成 127.0.0.1:16384）
 """
 import sys
 import time
 
-from config import ADB_PATH, DEFAULT_SKILL_PRIORITY
+from config import ADB_PATH, DEFAULT_SKILL_PRIORITY, BANNED_SKILL_KEYWORDS
 
 
 def _parse_args():
@@ -15,6 +15,7 @@ def _parse_args():
         "nogui": False,
         "serials": [],
         "priority": list(DEFAULT_SKILL_PRIORITY),
+        "banned": list(BANNED_SKILL_KEYWORDS),
         "debug": False,
         "adb": ADB_PATH,
     }
@@ -32,6 +33,9 @@ def _parse_args():
         elif a.startswith("--priority="):
             text = a.split("=", 1)[1]
             args["priority"] = [s.strip() for s in text.split(",") if s.strip()]
+        elif a.startswith("--banned="):
+            text = a.split("=", 1)[1]
+            args["banned"] = [s.strip() for s in text.split(",") if s.strip()]
         elif a.startswith("--adb="):
             args["adb"] = a.split("=", 1)[1]
     return args
@@ -51,6 +55,7 @@ def run_nogui(args):
         adb_path=args["adb"],
         serials=args["serials"],
         skill_priority=args["priority"],
+        banned_skill_keywords=args["banned"],
         log_fn=log_fn,
         debug=args["debug"],
     )

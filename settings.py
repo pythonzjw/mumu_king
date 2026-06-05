@@ -1,6 +1,6 @@
 """
 GUI 设置持久化：exe 同目录的 settings.json
-- adb_path / serials / priority / debug
+- adb_path / serials / priority / banned_skill_keywords / debug
 - 加载失败/文件缺失静默回退到默认值
 """
 import json

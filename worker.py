@@ -7,6 +7,7 @@
 import os
 import sys
 import time
+import re
 import cv2
 import numpy as np
 
@@ -38,7 +39,7 @@ from config import (
     SHOP_SWIPE_UP_FROM, SHOP_SWIPE_UP_TO, SHOP_SWIPE_DURATION_MS,
     SHOP_SWIPE_DOWN_FROM, SHOP_SWIPE_DOWN_TO, SHOP_RESET_TO_TOP_TIMES,
     SHOP_MAX_SWIPE, SHOP_MAX_EMPTY_SWIPE, SHOP_KEYWORD_FREE, SHOP_AD_BLOCKLIST,
-    SHOP_AFTER_TAP_WAIT, SHOP_REWARD_CLOSE_WAIT,
+    SHOP_AFTER_TAP_WAIT, SHOP_AFTER_SCROLL_WAIT, SHOP_REWARD_CLOSE_WAIT,
     SHOP_CONFIRM_KW, SHOP_CONFIRM_ROI, SHOP_CONFIRM_POLL,
     CASTLE_ENTER_WAIT, CASTLE_GET_SCROLL_ROI, CASTLE_GET_SCROLL_KW,
     CASTLE_MIYAN_BTN_ROI, CASTLE_MIYAN_BTN_KW,
@@ -64,7 +65,7 @@ from config import (
     SEVEN_DAY_TAB_POSITIONS,
     SEVEN_DAY_CLAIM_ROI, SEVEN_DAY_CLAIM_KW,
     SEVEN_DAY_FREE_ROI, SEVEN_DAY_FREE_KW,
-    SEVEN_DAY_ENTER_WAIT, SEVEN_DAY_AFTER_TAP,
+    SEVEN_DAY_ENTER_WAIT, SEVEN_DAY_AFTER_TAP, SEVEN_DAY_PAGE_WAIT,
     WORKSHOP_TAB_BTN, WORKSHOP_FASHI_TAB_BTN,
     WORKSHOP_UPGRADE_KW, WORKSHOP_UPGRADE_ROI,
     WORKSHOP_CONFIRM_ROI, WORKSHOP_CONFIRM_KW,
@@ -89,11 +90,13 @@ from recognizer import (
 
 
 class Worker:
-    def __init__(self, adb_client, name, log_fn, skill_priority, debug=False):
+    def __init__(self, adb_client, name, log_fn, skill_priority, debug=False,
+                 banned_skill_keywords=None):
         self.adb = adb_client
         self.name = name              # 用于日志前缀
         self.log_fn = log_fn
         self.skill_priority = list(skill_priority)
+        self.banned_skill_keywords = list(banned_skill_keywords or [])
         self.debug = debug
         self.running = True
         self.unknown_count = 0
@@ -222,46 +225,65 @@ class Worker:
         if not any(kw in combined for kw in ("解锁", "学习", "伤害", "次", "+")):
             self.log(f"[技能选择] 防御命中 — 3 卡文本不像战斗技能 ({combined[:40]}...)，跳过")
             return
-        hit = pick_skill_by_priority(cards, self.skill_priority)
+        banned = [kw for kw in self.banned_skill_keywords if kw]
+        selectable_cards = cards
+        if banned:
+            selectable_cards = []
+            for card in cards:
+                _, _, text = card
+                hit_banned = next((kw for kw in banned if kw in text), None)
+                if hit_banned:
+                    self.log(f"[技能选择] 跳过禁选「{hit_banned}」→ {text}")
+                else:
+                    selectable_cards.append(card)
+            if not selectable_cards:
+                self.log("[技能选择] 3 张都命中禁选关键字，回退允许全部，避免卡死")
+                selectable_cards = cards
+
+        hit = pick_skill_by_priority(selectable_cards, self.skill_priority)
         if hit:
             cx, cy, kw, text = hit
             self.log(f"命中 '{kw}' → 选「{text}」({cx},{cy})")
             self.adb.tap(cx, cy)
         else:
-            cx, cy, text = cards[0]
+            cx, cy, text = selectable_cards[0]
             self.log(f"无关键字命中，点第一张「{text}」({cx},{cy})")
             self.adb.tap(cx, cy)
         self._sleep(SKILL_SELECT_DELAY)
 
     def _handle_settle(self, screen):
-        """战斗胜利/失败结算页：先尝试「双倍奖励」看广告 → 再点确认"""
-        # 1. 找「双倍」按钮（左下，有次数限制 0/3）
+        """战斗胜利/失败结算页：有双倍次数就看广告；0/3 时直接确认"""
         db_hits = ocr_find_text(screen, SETTLE_DOUBLE_KW, SETTLE_DOUBLE_ROI, self.ocr)
         if db_hits:
             cx, cy, text = db_hits[0]
-            self.log(f"[结算] 点双倍奖励「{text.strip()}」({cx},{cy})")
-            self.adb.tap(cx, cy)
-            self._sleep(SETTLE_DOUBLE_WAIT)
-            # 验证是否真进了广告页（次数用完点了无反应不会进）
-            try:
-                screen2 = self.adb.screencap()
-            except AdbError:
-                screen2 = screen
-            state2 = detect_state(screen2, self.ocr)
-            if state2 == GameState.AD or not is_battle_tab_active(screen2):
-                # 真进广告
-                self.log("[结算] 进入广告，等待关闭")
-                self._watch_ad()
-                self._sleep(ADS_AFTER_CLOSE_WAIT)
-                try:
-                    screen = self.adb.screencap()
-                except AdbError:
-                    pass
+            norm = re.sub(r"\s+", "", text).replace("／", "/")
+            if re.search(r"0/3", norm):
+                self.log(f"[结算] 双倍次数已用完「{text.strip()}」，直接确认")
             else:
-                self.log(f"[结算] 点双倍未进广告 (state={state2})，可能次数用完，跳过")
-                screen = screen2
+                self.log(f"[结算] 点双倍奖励「{text.strip()}」({cx},{cy})")
+                self.adb.tap(cx, cy)
+                self._sleep(SETTLE_DOUBLE_WAIT)
+                try:
+                    screen2 = self.adb.screencap()
+                except AdbError:
+                    screen2 = screen
+                state2 = detect_state(screen2, self.ocr)
+                # 真进广告时通常识别为 AD；部分广告模板/OCR 失败会是 UNKNOWN。
+                # 如果仍能看到结算「确认」按钮，说明双倍没进去，不要等待 60s 广告超时。
+                if state2 == GameState.AD or (
+                    state2 == GameState.UNKNOWN and find_settle_button(screen2) is None
+                ):
+                    self.log("[结算] 进入广告，等待关闭")
+                    self._watch_ad()
+                    self._sleep(ADS_AFTER_CLOSE_WAIT)
+                    try:
+                        screen = self.adb.screencap()
+                    except AdbError:
+                        pass
+                else:
+                    self.log(f"[结算] 点双倍未进广告 (state={state2})，直接确认")
+                    screen = screen2
 
-        # 2. 点「确认」按钮（原逻辑）
         pos = find_settle_button(screen)
         if pos is None:
             self.log("未定位结算确定按钮")
@@ -473,9 +495,8 @@ class Worker:
         # 先下滑 N 次重置到商店顶部（游戏切 tab 不自动滚顶，下次进可能还在底部）
         for _ in range(SHOP_RESET_TO_TOP_TIMES):
             self.adb.swipe(*SHOP_SWIPE_DOWN_FROM, *SHOP_SWIPE_DOWN_TO, SHOP_SWIPE_DURATION_MS)
-            self._sleep(0.3)
+            self._sleep(SHOP_AFTER_SCROLL_WAIT)
         self.log(f"[商店] 已下滑 {SHOP_RESET_TO_TOP_TIMES} 次重置到顶部")
-        self._sleep(0.5)
 
         clicked = set()
         prev_swipe_signature = None
@@ -501,7 +522,7 @@ class Worker:
             if not new_hits:
                 self.log(f"[商店] 第 {round_idx+1} 轮本屏无新「免费」，上滑")
                 self.adb.swipe(*SHOP_SWIPE_UP_FROM, *SHOP_SWIPE_UP_TO, SHOP_SWIPE_DURATION_MS)
-                self._sleep(1.0)
+                self._sleep(SHOP_AFTER_SCROLL_WAIT)
                 try:
                     screen2 = self.adb.screencap()
                 except AdbError:
@@ -913,11 +934,11 @@ class Worker:
                 break
             self.log(f"[七日狂欢] 切第{day}天 tab ({tx},{ty})")
             self.adb.tap(tx, ty)
-            self._sleep(0.6)
+            self._sleep(SEVEN_DAY_PAGE_WAIT)
 
             # 切每日挑战 sub-tab → OCR 找领取，循环点
             self.adb.tap(*SEVEN_DAY_CHALLENGE_TAB)
-            self._sleep(0.6)
+            self._sleep(SEVEN_DAY_PAGE_WAIT)
             for _ in range(10):
                 if not self.running:
                     break
@@ -937,7 +958,7 @@ class Worker:
 
             # 切每日好礼 sub-tab → OCR 找免费，点一次
             self.adb.tap(*SEVEN_DAY_GIFT_TAB)
-            self._sleep(0.6)
+            self._sleep(SEVEN_DAY_PAGE_WAIT)
             try:
                 screen = self.adb.screencap()
             except AdbError:
