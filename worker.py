@@ -51,11 +51,11 @@ from config import (
     UNKNOWN_RESCUE_KEYWORDS, UNKNOWN_RESCUE_ROI,
     DEBUG_MAX_STEP_FILES,
     BATTLE_ORDER_WALL_TAB, BATTLE_ORDER_WALL_REDOT_ROI,
-    BATTLE_ORDER_CLAIM_BTN, BATTLE_ORDER_BACK_BTN,
+    BATTLE_ORDER_CLAIM_BTN,
     BATTLE_ORDER_ENTER_WAIT, BATTLE_ORDER_CLAIM_WAIT,
-    ACTIVITY_CLAIM_ROI, ACTIVITY_CLAIM_KW, ACTIVITY_CLOSE_BTN,
+    ACTIVITY_CLAIM_ROI, ACTIVITY_CLAIM_KW,
     ACTIVITY_ENTER_WAIT, ACTIVITY_AFTER_CLAIM,
-    TIMED_ACTIVITY_SIGN_KW, TIMED_ACTIVITY_SIGN_ROI, TIMED_ACTIVITY_CLOSE_BTN,
+    TIMED_ACTIVITY_SIGN_KW, TIMED_ACTIVITY_SIGN_ROI,
     TIMED_ACTIVITY_ENTER_WAIT, TIMED_ACTIVITY_AFTER_SIGN,
     TIMED_ACTIVITY_SCROLL_FROM, TIMED_ACTIVITY_SCROLL_TO,
     TIMED_ACTIVITY_SCROLL_DUR_MS, TIMED_ACTIVITY_SCROLL_TIMES,
@@ -63,7 +63,7 @@ from config import (
     SEVEN_DAY_CHALLENGE_REDOT_ROI, SEVEN_DAY_GIFT_REDOT_ROI,
     SEVEN_DAY_CLAIM_ROI, SEVEN_DAY_CLAIM_KW,
     SEVEN_DAY_FREE_ROI, SEVEN_DAY_FREE_KW,
-    SEVEN_DAY_CLOSE_BTN, SEVEN_DAY_ENTER_WAIT, SEVEN_DAY_AFTER_TAP,
+    SEVEN_DAY_ENTER_WAIT, SEVEN_DAY_AFTER_TAP,
     WORKSHOP_TAB_BTN, WORKSHOP_FASHI_TAB_BTN,
     WORKSHOP_UPGRADE_KW, WORKSHOP_UPGRADE_ROI,
     WORKSHOP_CONFIRM_ROI, WORKSHOP_CONFIRM_KW,
@@ -755,7 +755,7 @@ class Worker:
             self._sleep(BATTLE_ORDER_CLAIM_WAIT)
             self.adb.tap(*REWARD_OUTSIDE)
             self._sleep(0.5)
-        self.adb.tap(*BATTLE_ORDER_BACK_BTN)
+        self.adb.tap(*REWARD_OUTSIDE)   # v0.5.18 改用空白处关，避免点 BACK 误触 tab
         self._sleep(1.0)
         self.log("=== 战令日常结束 ===")
 
@@ -780,7 +780,7 @@ class Worker:
             self._sleep(ACTIVITY_AFTER_CLAIM)
             self.adb.tap(*REWARD_OUTSIDE)
             self._sleep(0.5)
-        self.adb.tap(*ACTIVITY_CLOSE_BTN)
+        self.adb.tap(*REWARD_OUTSIDE)   # v0.5.18 改用空白处关，避免 X 按钮位置误触 tab
         self._sleep(0.8)
         self.log("=== 活动日常结束 ===")
 
@@ -822,7 +822,7 @@ class Worker:
 
         if not signed:
             self.log("[限时活动] 全屏遍历没找到「签到」按钮，可能今日已签")
-        self.adb.tap(*TIMED_ACTIVITY_CLOSE_BTN)
+        self.adb.tap(*REWARD_OUTSIDE)   # v0.5.18 改用空白处关
         self._sleep(0.8)
         self.log("=== 限时活动日常结束 ===")
 
@@ -835,7 +835,7 @@ class Worker:
         try:
             screen = self.adb.screencap()
         except AdbError:
-            self.adb.tap(*SEVEN_DAY_CLOSE_BTN)
+            self.adb.tap(*REWARD_OUTSIDE)   # v0.5.18 改用空白处关
             self._sleep(0.8)
             return
 
@@ -884,7 +884,7 @@ class Worker:
                 else:
                     self.log("[七日狂欢/好礼] 未找到「免费」按钮")
 
-        self.adb.tap(*SEVEN_DAY_CLOSE_BTN)
+        self.adb.tap(*REWARD_OUTSIDE)   # v0.5.18 改用空白处关
         self._sleep(0.8)
         self.log("=== 七日狂欢日常结束 ===")
 
