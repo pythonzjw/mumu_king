@@ -3,6 +3,7 @@
 """
 import os
 import sys
+import re
 
 # 项目根目录（兼容 PyInstaller 打包后的路径）
 if getattr(sys, "frozen", False):
@@ -41,7 +42,7 @@ MUMU_CANDIDATE_PORTS = [16384, 16416, 16448, 16480, 16512, 16544, 16576, 16608]
 
 # === 延迟配置（秒） ===
 LOOP_INTERVAL = 1.0          # 主循环每次截图间隔（从 0.5 调到 1.0 降频减负载）
-BATTLE_WAIT = 2.0            # 战斗中等待
+BATTLE_WAIT = 4.0            # 战斗中等待（降频减少截图/模板匹配 CPU）
 ENTER_WAIT = 1.5             # 点进入按钮后等加载
 SETTLE_WAIT = 1.0            # 点结算确定后等
 SETTLE_DOUBLE_KW   = "双倍"  # 结算页双倍奖励按钮关键字
@@ -79,6 +80,15 @@ DEFAULT_SKILL_PRIORITY = [
 ]
 # === 禁选技能关键字（substring 匹配；命中则优先跳过，除非 3 张全被禁）===
 BANNED_SKILL_KEYWORDS = []
+
+
+def parse_keyword_list(text_or_list):
+    """解析关键字列表：支持英文/中文逗号、顿号、分号、换行分隔"""
+    if isinstance(text_or_list, (list, tuple)):
+        text = ",".join(str(x) for x in text_or_list)
+    else:
+        text = str(text_or_list or "")
+    return [s.strip() for s in re.split(r"[,，、;；\r\n]+", text) if s.strip()]
 
 # === 技能卡 OCR ROI（540×960 基准，OCR 实测：3 张卡顶部 y=342，x ≈ 95/270/444）===
 SKILL_CARD_ROIS = [
@@ -204,6 +214,7 @@ WHEEL_SKIP_BTN       = (264, 905)
 # 右上角小 ROI 找以下关键字任一命中 → 视为广告页
 AD_DETECT_ROI        = (160, 40, 540, 250)         # 跟 ADS_SKIP_ROI 共用
 AD_DETECT_KEYWORDS   = ("跳过", "关闭")            # 单字「秒」太通用，不用
+AD_DETECT_UNKNOWN_AT = 2                           # 连续 UNKNOWN 后才 OCR 兜底识别广告，降低 CPU
 
 
 # === UNKNOWN 主动脱困 ===
@@ -226,21 +237,25 @@ ACTIVITY_CLAIM_ROI    = (300, 200, 540, 875)
 ACTIVITY_CLAIM_KW     = "领取"
 ACTIVITY_ENTER_WAIT   = 1.5
 ACTIVITY_AFTER_CLAIM  = 0.8
+ACTIVITY_HOME_FALLBACK = (145, 225)
 
 # === 限时活动日常 ===
 TIMED_ACTIVITY_SIGN_KW    = "签到"
 TIMED_ACTIVITY_SIGN_ROI   = (300, 240, 540, 875)
 TIMED_ACTIVITY_ENTER_WAIT = 1.5
 TIMED_ACTIVITY_AFTER_SIGN = 0.8
+TIMED_ACTIVITY_HOME_FALLBACK = (205, 225)
 # 找不到签到时下滑找：从 (270, 700) 滑到 (270, 300)，最多 5 次
 TIMED_ACTIVITY_SCROLL_FROM     = (270, 700)
 TIMED_ACTIVITY_SCROLL_TO       = (270, 300)
 TIMED_ACTIVITY_SCROLL_DUR_MS   = 400
 TIMED_ACTIVITY_SCROLL_TIMES    = 5
+TIMED_ACTIVITY_AFTER_SCROLL_WAIT = 1.0
 
 # === 七日狂欢日常 ===
 SEVEN_DAY_CHALLENGE_TAB       = (190, 285)
 SEVEN_DAY_GIFT_TAB            = (360, 285)
+SEVEN_DAY_HOME_FALLBACK       = (270, 225)
 # 1-7 天 tab 点击位置（OCR 实测）
 SEVEN_DAY_TAB_POSITIONS = [
     (89, 221),  (151, 221), (213, 221), (275, 221),
@@ -255,6 +270,10 @@ SEVEN_DAY_FREE_KW             = "免费"
 SEVEN_DAY_ENTER_WAIT          = 1.5
 SEVEN_DAY_AFTER_TAP           = 0.8
 SEVEN_DAY_PAGE_WAIT           = 1.0
+
+# === OCR 领取按钮通用配置 ===
+CLAIM_EMPTY_RECHECK           = 2
+CLAIM_SKIP_KEYWORDS           = ("已领取", "已领", "继续领取")
 
 # === 城堡工坊日常 ===
 WORKSHOP_TAB_BTN             = (265, 838)

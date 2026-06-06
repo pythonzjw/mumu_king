@@ -5,6 +5,7 @@
 - 模板缺失时抛 RecognizeError，让用户先放图
 """
 import os
+import re
 import threading
 from functools import lru_cache
 
@@ -72,7 +73,7 @@ def _try_match(screen, tpl_name, threshold=MATCH_THRESHOLD):
         return 0.0, None
 
 
-def detect_state(screen, ocr=None):
+def detect_state(screen, ocr=None, detect_ad=True):
     """识别当前游戏状态。
     优先级：BUY_STAMINA > REWARD_POPUP > WHEEL > PERFECT_CLEAR > SKILL_SELECT > SETTLE > BATTLE > HOME > AD > UNKNOWN
     - BUY_STAMINA 最前：覆盖 HOME 画面的弹窗
@@ -116,7 +117,7 @@ def detect_state(screen, ocr=None):
         return GameState.HOME
 
     # AD 兜底：所有模板都没命中时 OCR 扫右上角找广告关键字
-    if ocr is not None:
+    if detect_ad and ocr is not None:
         for kw in AD_DETECT_KEYWORDS:
             hits = ocr_find_text(screen, kw, AD_DETECT_ROI, ocr)
             if hits:
@@ -284,8 +285,10 @@ def pick_skill_by_priority(cards, priority):
     for keyword in priority:
         if not keyword:
             continue
+        norm_keyword = re.sub(r"\s+", "", keyword)
         for cx, cy, text in cards:
-            if keyword in text:
+            norm_text = re.sub(r"\s+", "", text or "")
+            if norm_keyword and norm_keyword in norm_text:
                 return cx, cy, keyword, text
     return None
 

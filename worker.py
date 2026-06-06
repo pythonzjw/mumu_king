@@ -48,6 +48,7 @@ from config import (
     SCREEN_CENTER,
     ADS_SKIP_ROI, ADS_KEYWORDS, ADS_FALLBACK_TAPS,
     ADS_TIMEOUT_SEC, ADS_POLL_INTERVAL, ADS_AFTER_CLOSE_WAIT,
+    AD_DETECT_UNKNOWN_AT,
     WHEEL_SKIP_BTN,
     UNKNOWN_RESCUE_OCR_AT, UNKNOWN_RESCUE_TAB_DELTA,
     UNKNOWN_RESCUE_KEYWORDS, UNKNOWN_RESCUE_ROI,
@@ -56,16 +57,18 @@ from config import (
     BATTLE_ORDER_CLAIM_BTN,
     BATTLE_ORDER_ENTER_WAIT, BATTLE_ORDER_CLAIM_WAIT,
     ACTIVITY_CLAIM_ROI, ACTIVITY_CLAIM_KW,
-    ACTIVITY_ENTER_WAIT, ACTIVITY_AFTER_CLAIM,
+    ACTIVITY_ENTER_WAIT, ACTIVITY_AFTER_CLAIM, ACTIVITY_HOME_FALLBACK,
     TIMED_ACTIVITY_SIGN_KW, TIMED_ACTIVITY_SIGN_ROI,
-    TIMED_ACTIVITY_ENTER_WAIT, TIMED_ACTIVITY_AFTER_SIGN,
+    TIMED_ACTIVITY_ENTER_WAIT, TIMED_ACTIVITY_AFTER_SIGN, TIMED_ACTIVITY_HOME_FALLBACK,
     TIMED_ACTIVITY_SCROLL_FROM, TIMED_ACTIVITY_SCROLL_TO,
     TIMED_ACTIVITY_SCROLL_DUR_MS, TIMED_ACTIVITY_SCROLL_TIMES,
-    SEVEN_DAY_CHALLENGE_TAB, SEVEN_DAY_GIFT_TAB,
+    TIMED_ACTIVITY_AFTER_SCROLL_WAIT,
+    SEVEN_DAY_CHALLENGE_TAB, SEVEN_DAY_GIFT_TAB, SEVEN_DAY_HOME_FALLBACK,
     SEVEN_DAY_TAB_POSITIONS,
     SEVEN_DAY_CLAIM_ROI, SEVEN_DAY_CLAIM_KW,
     SEVEN_DAY_FREE_ROI, SEVEN_DAY_FREE_KW,
     SEVEN_DAY_ENTER_WAIT, SEVEN_DAY_AFTER_TAP, SEVEN_DAY_PAGE_WAIT,
+    CLAIM_EMPTY_RECHECK, CLAIM_SKIP_KEYWORDS,
     WORKSHOP_TAB_BTN, WORKSHOP_FASHI_TAB_BTN,
     WORKSHOP_UPGRADE_KW, WORKSHOP_UPGRADE_ROI,
     WORKSHOP_CONFIRM_ROI, WORKSHOP_CONFIRM_KW,
@@ -134,15 +137,21 @@ class Worker:
 
     def run(self):
         self.log("启动")
+        self.log(f"[技能] 优先级: {self.skill_priority}")
+        self.log(f"[技能] 禁选: {self.banned_skill_keywords}")
         self.log("[ocr] 加载中...")
         self.ocr = make_ocr()
         self.log("[ocr] 加载完成，开始识别")
         while self.running:
             try:
                 screen = self.adb.screencap()
-                self._save_debug(screen)
-                state = detect_state(screen, self.ocr)
+                # 默认不跑广告 OCR 兜底；连续 UNKNOWN 后再跑，减少空场景 OCR CPU
+                state = detect_state(screen, self.ocr, detect_ad=False)
+                if state == GameState.UNKNOWN and self.unknown_count + 1 >= AD_DETECT_UNKNOWN_AT:
+                    state = detect_state(screen, self.ocr, detect_ad=True)
                 self.log(f"状态: {state}")
+                if self.debug and state not in (GameState.HOME, GameState.BATTLE, GameState.UNKNOWN):
+                    self._save_debug(screen, f"_{str(state).lower()}")
 
                 if state == GameState.HOME:
                     self.unknown_count = 0
@@ -225,13 +234,14 @@ class Worker:
         if not any(kw in combined for kw in ("解锁", "学习", "伤害", "次", "+")):
             self.log(f"[技能选择] 防御命中 — 3 卡文本不像战斗技能 ({combined[:40]}...)，跳过")
             return
-        banned = [kw for kw in self.banned_skill_keywords if kw]
+        banned = [re.sub(r"\s+", "", kw) for kw in self.banned_skill_keywords if kw]
         selectable_cards = cards
         if banned:
             selectable_cards = []
             for card in cards:
                 _, _, text = card
-                hit_banned = next((kw for kw in banned if kw in text), None)
+                norm_text = re.sub(r"\s+", "", text or "")
+                hit_banned = next((kw for kw in banned if kw in norm_text), None)
                 if hit_banned:
                     self.log(f"[技能选择] 跳过禁选「{hit_banned}」→ {text}")
                 else:
@@ -239,6 +249,7 @@ class Worker:
             if not selectable_cards:
                 self.log("[技能选择] 3 张都命中禁选关键字，回退允许全部，避免卡死")
                 selectable_cards = cards
+        self.log("[技能选择] 可选卡: " + " | ".join(t or "(空)" for _, _, t in selectable_cards))
 
         hit = pick_skill_by_priority(selectable_cards, self.skill_priority)
         if hit:
@@ -395,15 +406,19 @@ class Worker:
             if pos is not None:
                 home_icons[name] = pos
 
-        if not tabs and not home_icons:
-            self.log("无红点，跳过日常")
-            return
-        self.log(f"红点 tab: {sorted(tabs)} + HOME 图标: {sorted(home_icons)}，开始串行做")
+        # 兜底：这些日常入口/红点偶发模板漏识别，体力等待窗口内固定扫一遍，内部无可领会自行退出
+        home_icons.setdefault("ACTIVITY", ACTIVITY_HOME_FALLBACK)
+        home_icons.setdefault("TIMED_ACTIVITY", TIMED_ACTIVITY_HOME_FALLBACK)
+        home_icons.setdefault("SEVEN_DAY", SEVEN_DAY_HOME_FALLBACK)
+
+        self.log(f"红点 tab: {sorted(tabs)} + HOME 图标/兜底: {sorted(home_icons)}，开始串行做")
         # 底部 tab 日常
         if "SHOP" in tabs:
             self._do_shop_daily()
-        if "EQUIPMENT" in tabs:
-            self._do_equipment_daily()
+        # 装备日常固定执行一次：无红点时一键升级/合成无事可做也能安全退出
+        if "EQUIPMENT" not in tabs:
+            self.log("[装备] 未检测到红点，仍固定执行一次防漏")
+        self._do_equipment_daily()
         if "CASTLE" in tabs:
             self._do_castle_daily()
         # HOME 顶部图标日常（找到带红 ! 的才做）
@@ -829,27 +844,58 @@ class Worker:
         self._sleep(1.0)
         self.log("=== 战令日常结束 ===")
 
-    def _do_activity_daily(self, icon_pos):
-        """活动日常：进入活动页 → 领取所有可领 → 关闭"""
-        self.log(f"=== 活动日常开始 (入口 {icon_pos}) ===")
-        self.adb.tap(*icon_pos)
-        self._sleep(ACTIVITY_ENTER_WAIT)
-        for _ in range(10):
+    def _is_usable_ocr_button(self, text, required_kw, skip_keywords=CLAIM_SKIP_KEYWORDS):
+        """判断 OCR 行是否像可点击按钮：包含目标词，且不含已领取/继续领取等干扰词"""
+        norm = re.sub(r"\s+", "", text or "")
+        if required_kw not in norm:
+            return False
+        return not any(bad and bad in norm for bad in skip_keywords)
+
+    def _drain_ocr_buttons(self, label, keyword, roi, after_tap, max_rounds=20,
+                           empty_recheck=CLAIM_EMPTY_RECHECK,
+                           skip_keywords=CLAIM_SKIP_KEYWORDS):
+        """反复 OCR 当前页按钮，每次点一个后重新截图，避免动画/奖励弹窗导致漏领"""
+        clicked = 0
+        empty = 0
+        for _ in range(max_rounds):
             if not self.running:
                 break
             try:
                 screen = self.adb.screencap()
             except AdbError:
                 break
-            hits = ocr_find_text(screen, ACTIVITY_CLAIM_KW, ACTIVITY_CLAIM_ROI, self.ocr)
-            if not hits:
-                break
-            cx, cy, _ = hits[0]
-            self.log(f"[活动] 点领取 ({cx},{cy})")
+            hits = ocr_find_text(screen, keyword, roi, self.ocr)
+            usable = [
+                (cx, cy, text) for cx, cy, text in hits
+                if self._is_usable_ocr_button(text, keyword, skip_keywords)
+            ]
+            if not usable:
+                empty += 1
+                if empty >= empty_recheck:
+                    break
+                self._sleep(0.5)
+                continue
+            empty = 0
+            cx, cy, text = usable[0]
+            self.log(f"[{label}] 点「{text.strip()}」({cx},{cy})")
             self.adb.tap(cx, cy)
-            self._sleep(ACTIVITY_AFTER_CLAIM)
+            clicked += 1
+            self._sleep(after_tap)
             self.adb.tap(*REWARD_OUTSIDE)
             self._sleep(0.5)
+        if clicked:
+            self.log(f"[{label}] 本轮共点击 {clicked} 个「{keyword}」")
+        return clicked
+
+    def _do_activity_daily(self, icon_pos):
+        """活动日常：进入活动页 → 领取所有可领 → 关闭"""
+        self.log(f"=== 活动日常开始 (入口 {icon_pos}) ===")
+        self.adb.tap(*icon_pos)
+        self._sleep(ACTIVITY_ENTER_WAIT)
+        self._drain_ocr_buttons(
+            "活动", ACTIVITY_CLAIM_KW, ACTIVITY_CLAIM_ROI,
+            ACTIVITY_AFTER_CLAIM,
+        )
         self.adb.tap(*REWARD_OUTSIDE)   # v0.5.18 改用空白处关，避免 X 按钮位置误触 tab
         self._sleep(0.8)
         self.log("=== 活动日常结束 ===")
@@ -869,11 +915,13 @@ class Worker:
                 screen = self.adb.screencap()
             except AdbError:
                 break
-            hits = ocr_find_text(screen, TIMED_ACTIVITY_SIGN_KW, TIMED_ACTIVITY_SIGN_ROI, self.ocr,
-                                  blocklist=("继续领取",))
-            # 找精确「签到」按钮（不含「继续领取」/「未开起」等其他文本）
+            hits = ocr_find_text(screen, TIMED_ACTIVITY_SIGN_KW, TIMED_ACTIVITY_SIGN_ROI, self.ocr)
+            # 找包含「签到」的按钮；逐行排除已签到/未开启等干扰，不用全 ROI blocklist
             for cx, cy, text in hits:
-                if text.strip() == TIMED_ACTIVITY_SIGN_KW:
+                if self._is_usable_ocr_button(
+                    text, TIMED_ACTIVITY_SIGN_KW,
+                    skip_keywords=("已签到", "已签", "未开启", "未开起", "继续领取"),
+                ):
                     self.log(f"[限时活动] 点签到 ({cx},{cy})")
                     self.adb.tap(cx, cy)
                     self._sleep(TIMED_ACTIVITY_AFTER_SIGN)
@@ -888,7 +936,7 @@ class Worker:
                 self.log(f"[限时活动] 第 {scroll_idx+1} 屏没找到签到，下滑")
                 self.adb.swipe(*TIMED_ACTIVITY_SCROLL_FROM, *TIMED_ACTIVITY_SCROLL_TO,
                                 TIMED_ACTIVITY_SCROLL_DUR_MS)
-                self._sleep(0.6)
+                self._sleep(TIMED_ACTIVITY_AFTER_SCROLL_WAIT)
 
         if not signed:
             self.log("[限时活动] 全屏遍历没找到「签到」按钮，可能今日已签")
@@ -921,15 +969,12 @@ class Worker:
             if self._has_redot(screen, roi, debug_label=f"7day-第{idx}天"):
                 days_with_redot.append((idx, tx, ty))
 
-        if not days_with_redot:
-            self.log("[七日狂欢] 1-7 天都无红点，跳过")
-            self.adb.tap(*REWARD_OUTSIDE)
-            self._sleep(0.8)
-            return
+        if days_with_redot:
+            self.log(f"[七日狂欢] 有红点的天: {[d[0] for d in days_with_redot]}；仍遍历 1-7 天防漏")
+        else:
+            self.log("[七日狂欢] 1-7 天红点未命中，兜底遍历 1-7 天")
 
-        self.log(f"[七日狂欢] 有红点的天: {[d[0] for d in days_with_redot]}")
-
-        for day, tx, ty in days_with_redot:
+        for day, (tx, ty) in enumerate(SEVEN_DAY_TAB_POSITIONS, start=1):
             if not self.running:
                 break
             self.log(f"[七日狂欢] 切第{day}天 tab ({tx},{ty})")
@@ -939,38 +984,24 @@ class Worker:
             # 切每日挑战 sub-tab → OCR 找领取，循环点
             self.adb.tap(*SEVEN_DAY_CHALLENGE_TAB)
             self._sleep(SEVEN_DAY_PAGE_WAIT)
-            for _ in range(10):
-                if not self.running:
-                    break
-                try:
-                    screen = self.adb.screencap()
-                except AdbError:
-                    break
-                hits = ocr_find_text(screen, SEVEN_DAY_CLAIM_KW, SEVEN_DAY_CLAIM_ROI, self.ocr)
-                if not hits:
-                    break
-                cx, cy, _ = hits[0]
-                self.log(f"[七日狂欢/第{day}天/挑战] 点领取 ({cx},{cy})")
-                self.adb.tap(cx, cy)
-                self._sleep(SEVEN_DAY_AFTER_TAP)
-                self.adb.tap(*REWARD_OUTSIDE)
-                self._sleep(0.5)
+            self._drain_ocr_buttons(
+                f"七日狂欢/第{day}天/挑战",
+                SEVEN_DAY_CLAIM_KW,
+                SEVEN_DAY_CLAIM_ROI,
+                SEVEN_DAY_AFTER_TAP,
+            )
 
             # 切每日好礼 sub-tab → OCR 找免费，点一次
             self.adb.tap(*SEVEN_DAY_GIFT_TAB)
             self._sleep(SEVEN_DAY_PAGE_WAIT)
-            try:
-                screen = self.adb.screencap()
-            except AdbError:
-                continue
-            hits = ocr_find_text(screen, SEVEN_DAY_FREE_KW, SEVEN_DAY_FREE_ROI, self.ocr)
-            if hits:
-                cx, cy, _ = hits[0]
-                self.log(f"[七日狂欢/第{day}天/好礼] 点免费 ({cx},{cy})")
-                self.adb.tap(cx, cy)
-                self._sleep(SEVEN_DAY_AFTER_TAP)
-                self.adb.tap(*REWARD_OUTSIDE)
-                self._sleep(0.5)
+            self._drain_ocr_buttons(
+                f"七日狂欢/第{day}天/好礼",
+                SEVEN_DAY_FREE_KW,
+                SEVEN_DAY_FREE_ROI,
+                SEVEN_DAY_AFTER_TAP,
+                max_rounds=3,
+                skip_keywords=("已领取", "已领"),
+            )
 
         self.adb.tap(*REWARD_OUTSIDE)
         self._sleep(0.8)

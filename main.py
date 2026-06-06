@@ -7,7 +7,7 @@
 import sys
 import time
 
-from config import ADB_PATH, DEFAULT_SKILL_PRIORITY, BANNED_SKILL_KEYWORDS
+from config import ADB_PATH, DEFAULT_SKILL_PRIORITY, BANNED_SKILL_KEYWORDS, parse_keyword_list
 
 
 def _parse_args():
@@ -32,10 +32,10 @@ def _parse_args():
             args["serials"] = [p if ":" in p or p.startswith("emulator-") else f"127.0.0.1:{p}" for p in ports]
         elif a.startswith("--priority="):
             text = a.split("=", 1)[1]
-            args["priority"] = [s.strip() for s in text.split(",") if s.strip()]
+            args["priority"] = parse_keyword_list(text)
         elif a.startswith("--banned="):
             text = a.split("=", 1)[1]
-            args["banned"] = [s.strip() for s in text.split(",") if s.strip()]
+            args["banned"] = parse_keyword_list(text)
         elif a.startswith("--adb="):
             args["adb"] = a.split("=", 1)[1]
     return args

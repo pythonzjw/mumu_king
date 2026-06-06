@@ -8,7 +8,10 @@ import tkinter as tk
 from tkinter import scrolledtext, messagebox
 import threading
 
-from config import ADB_PATH, DEFAULT_SKILL_PRIORITY, BANNED_SKILL_KEYWORDS, MUMU_CANDIDATE_PORTS
+from config import (
+    ADB_PATH, DEFAULT_SKILL_PRIORITY, BANNED_SKILL_KEYWORDS,
+    MUMU_CANDIDATE_PORTS, parse_keyword_list,
+)
 import settings
 
 
@@ -117,7 +120,7 @@ class App:
             f4, text="停止", command=self._stop, width=10, state="disabled",
         )
         self.btn_stop.pack(side="left", padx=(0, 10))
-        self.debug_var = tk.BooleanVar(value=True)
+        self.debug_var = tk.BooleanVar(value=False)
         tk.Checkbutton(f4, text="调试模式（保存每步截图）", variable=self.debug_var).pack(side="left")
 
         # 状态
@@ -162,8 +165,8 @@ class App:
         """把当前 GUI 状态存到 settings.json（不存 debug，让代码默认值生效）"""
         settings.save({
             "adb_path": self.adb_var.get().strip(),
-            "priority": [s.strip() for s in self.priority_var.get().split(",") if s.strip()],
-            "banned_skill_keywords": [s.strip() for s in self.banned_var.get().split(",") if s.strip()],
+            "priority": parse_keyword_list(self.priority_var.get()),
+            "banned_skill_keywords": parse_keyword_list(self.banned_var.get()),
             "serials": self._selected_serials(),
         })
 
@@ -350,10 +353,10 @@ class App:
 
         priority_text = self.priority_var.get().strip()
         if priority_text:
-            priority = [s.strip() for s in priority_text.split(",") if s.strip()]
+            priority = parse_keyword_list(priority_text)
         else:
             priority = list(DEFAULT_SKILL_PRIORITY)
-        banned = [s.strip() for s in self.banned_var.get().split(",") if s.strip()]
+        banned = parse_keyword_list(self.banned_var.get())
 
         # 持久化当前设置，下次启动自动恢复
         self._save_settings()
