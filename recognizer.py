@@ -420,6 +420,12 @@ def find_back_button(screen):
     return (max_loc[0] + w // 2, max_loc[1] + h // 2)
 
 
+def find_template(screen, tpl_name, threshold=MATCH_THRESHOLD):
+    """通用模板匹配：返回中心坐标；模板缺失/分数不足返回 None。"""
+    score, pos = _try_match(screen, tpl_name)
+    return pos if score >= threshold else None
+
+
 def find_workshop_collect_buttons(screen):
     """全屏查找所有活跃「领取」按钮（模板匹配），返回 [(cx, cy), ...] 按 cy 升序
     模板缺失抛 RecognizeError；未找到返回 []

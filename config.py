@@ -206,6 +206,9 @@ ADS_FALLBACK_TAPS    = [(492, 62), (400, 185)]
 ADS_TIMEOUT_SEC      = 60
 ADS_POLL_INTERVAL    = 1.0
 ADS_AFTER_CLOSE_WAIT = 1.5
+ADS_PROGRESS_KEYWORDS = ("跳过", "秒")
+ADS_PAUSE_CHECK_SEC   = 8
+ADS_RESUME_TAP        = (270, 480)
 
 # === Boss 轮盘弹窗底部「跳过」按钮（OCR 实测 (264, 905)）===
 WHEEL_SKIP_BTN       = (264, 905)
@@ -222,6 +225,10 @@ UNKNOWN_RESCUE_OCR_AT    = 3
 UNKNOWN_RESCUE_TAB_DELTA = 3
 UNKNOWN_RESCUE_KEYWORDS  = ("确定", "关闭", "取消", "我知道了", "返回", "跳过")
 UNKNOWN_RESCUE_ROI       = (0, 90, 540, 875)
+LAUNCH_GAME_KW           = "正中靶心"
+LAUNCH_GAME_ROI          = (260, 330, 410, 430)
+LAUNCH_GAME_POS          = (334, 382)
+LAUNCH_GAME_MAX_TPL_SCORE = 0.6
 
 # === HOME 顶部图标入口（坐标由 recognizer.find_home_icon 动态返回，不写死） ===
 
@@ -270,6 +277,8 @@ SEVEN_DAY_FREE_KW             = "免费"
 SEVEN_DAY_ENTER_WAIT          = 1.5
 SEVEN_DAY_AFTER_TAP           = 0.8
 SEVEN_DAY_PAGE_WAIT           = 1.0
+SEVEN_DAY_REWARD_CLOSE        = (270, 760)   # 七日奖励弹窗「点击屏幕继续」区域，避免点右上角误退出页面
+SEVEN_DAY_RESCAN_ROUNDS       = 3            # 多轮复扫，防止切 tab/动画导致遗漏领取
 
 # === OCR 领取按钮通用配置 ===
 CLAIM_EMPTY_RECHECK           = 2
@@ -294,6 +303,33 @@ WORKSHOP_ENTER_WAIT          = 1.2
 WORKSHOP_AFTER_UPGRADE       = 1.0
 WORKSHOP_POPUP_WAIT          = 1.5
 WORKSHOP_AFTER_COLLECT       = 0.8
+
+# === 城堡法术书指定技能升级 ===
+CASTLE_SPELL_TARGET_TPLS = (
+    "castle_spell_page2_row1_col3.png",
+    "castle_spell_dragon_page_row2_col3.png",
+    "castle_spell_scroll_page_row2_col2.png",
+    "castle_spell_wind_page_row1_col2.png",
+)
+CASTLE_SPELL_MATCH_THRESHOLD = 0.82
+CASTLE_SPELL_RESET_TO_TOP_TIMES = 3
+CASTLE_SPELL_SCROLL_TIMES = 4
+CASTLE_SPELL_SCROLL_DOWN_FROM = (270, 450)  # 手指向下滑，内容回到顶部
+CASTLE_SPELL_SCROLL_DOWN_TO = (270, 700)
+CASTLE_SPELL_SCROLL_UP_FROM = (270, 700)    # 手指向上滑，内容向下翻页
+CASTLE_SPELL_SCROLL_UP_TO = (270, 450)
+CASTLE_SPELL_SCROLL_DUR_MS = 400
+CASTLE_SPELL_AFTER_TAP = 1.0
+CASTLE_SPELL_POPUP_WAIT = 1.0
+
+# === 挑战支线关卡 ===
+CHALLENGE_BRANCH_ENTER_TPL = "challenge_branch_enter.png"
+CHALLENGE_BRANCH_CARD_TPL = "challenge_branch_card.png"
+CHALLENGE_MATCH_THRESHOLD = 0.8
+CHALLENGE_TAB_WAIT = 1.5
+CHALLENGE_ENTER_WAIT = 1.5
+CHALLENGE_MAX_SECONDS = 900
+CHALLENGE_REWARD_CLOSE = (270, 760)
 
 # === debug 截图环形覆盖 ===
 DEBUG_MAX_STEP_FILES     = 5000
