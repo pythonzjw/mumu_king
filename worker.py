@@ -70,7 +70,7 @@ from config import (
     SEVEN_DAY_CLAIM_ROI, SEVEN_DAY_CLAIM_KW,
     SEVEN_DAY_FREE_ROI, SEVEN_DAY_FREE_KW,
     SEVEN_DAY_ENTER_WAIT, SEVEN_DAY_AFTER_TAP, SEVEN_DAY_PAGE_WAIT,
-    SEVEN_DAY_REWARD_CLOSE, SEVEN_DAY_RESCAN_ROUNDS,
+    SEVEN_DAY_REWARD_CLOSE, SEVEN_DAY_RESCAN_ROUNDS, SEVEN_DAY_SKIP_KEYWORDS,
     CLAIM_EMPTY_RECHECK, CLAIM_SKIP_KEYWORDS,
     WORKSHOP_TAB_BTN, WORKSHOP_FASHI_TAB_BTN,
     WORKSHOP_UPGRADE_KW, WORKSHOP_UPGRADE_ROI,
@@ -82,7 +82,6 @@ from config import (
     WORKSHOP_ENTER_WAIT, WORKSHOP_AFTER_UPGRADE,
     WORKSHOP_POPUP_WAIT, WORKSHOP_AFTER_COLLECT,
     CASTLE_SPELL_TARGET_TPLS, CASTLE_SPELL_MATCH_THRESHOLD,
-    CASTLE_SPELL_SEARCH_ROI,
     CASTLE_SPELL_RESET_TO_TOP_TIMES, CASTLE_SPELL_SCROLL_TIMES,
     CASTLE_SPELL_SCROLL_DOWN_FROM, CASTLE_SPELL_SCROLL_DOWN_TO,
     CASTLE_SPELL_SCROLL_UP_FROM, CASTLE_SPELL_SCROLL_UP_TO,
@@ -91,6 +90,8 @@ from config import (
     CHALLENGE_BRANCH_ENTER_TPL, CHALLENGE_BRANCH_CARD_TPL,
     CHALLENGE_MATCH_THRESHOLD, CHALLENGE_TAB_WAIT, CHALLENGE_ENTER_WAIT,
     CHALLENGE_MAX_SECONDS, CHALLENGE_REWARD_CLOSE,
+    CHALLENGE_PERFECT_KW, CHALLENGE_PERFECT_ROI, CHALLENGE_PERFECT_RED_MIN,
+    CHALLENGE_REWARD_CHEST_POS, CHALLENGE_REWARD_WAIT,
     REDOT_MATCH_THRESHOLD,
 )
 from adb import AdbError
@@ -829,14 +830,8 @@ class Worker:
         self._sleep(WORKSHOP_ENTER_WAIT)
 
     def _find_castle_spell_targets(self, screen):
-        """在当前法术书屏幕查找用户确认的指定技能模板，返回 [(tpl, cx, cy, score)]。"""
+        """全图查找用户确认的指定技能模板，返回 [(tpl, cx, cy, score)]。"""
         hits = []
-        x1, y1, x2, y2 = CASTLE_SPELL_SEARCH_ROI
-        x1 = max(0, x1); y1 = max(0, y1)
-        x2 = min(screen.shape[1], x2); y2 = min(screen.shape[0], y2)
-        crop = screen[y1:y2, x1:x2]
-        if crop.size == 0:
-            return hits
         for tpl_name in CASTLE_SPELL_TARGET_TPLS:
             try:
                 tpl = _load_template(tpl_name)
@@ -844,12 +839,12 @@ class Worker:
                 self.log(f"[法术书] 模板缺失，跳过: {tpl_name}")
                 continue
             th, tw = tpl.shape[:2]
-            if crop.shape[0] < th or crop.shape[1] < tw:
+            if screen.shape[0] < th or screen.shape[1] < tw:
                 continue
-            res = cv2.matchTemplate(crop, tpl, cv2.TM_CCOEFF_NORMED)
+            res = cv2.matchTemplate(screen, tpl, cv2.TM_CCOEFF_NORMED)
             _, score, _, max_loc = cv2.minMaxLoc(res)
             if score >= CASTLE_SPELL_MATCH_THRESHOLD:
-                hits.append((tpl_name, x1 + max_loc[0] + tw // 2, y1 + max_loc[1] + th // 2, float(score)))
+                hits.append((tpl_name, max_loc[0] + tw // 2, max_loc[1] + th // 2, float(score)))
         hits.sort(key=lambda h: (h[2], h[1]))
         return hits
 
@@ -990,9 +985,11 @@ class Worker:
             # 已打完回到挑战页：不再点进入，直接回战斗
             if entered_battle and find_template(screen, CHALLENGE_BRANCH_CARD_TPL, CHALLENGE_MATCH_THRESHOLD):
                 self.log("[挑战] 已回到支线页，切回战斗")
+                self._claim_challenge_perfect_reward(screen)
                 break
             if entered_battle and ocr_find_text(screen, "支线关卡", (0, 90, 540, 360), self.ocr):
                 self.log("[挑战] OCR 已回到支线页，切回战斗")
+                self._claim_challenge_perfect_reward(screen)
                 break
 
             if self._handle_challenge_reward_or_complete(screen):
@@ -1024,9 +1021,10 @@ class Worker:
             elif state == GameState.WHEEL:
                 self._handle_wheel()
             elif state == GameState.PERFECT_CLEAR:
-                # 支线奖励页只点继续，不走主线 3 宝箱逻辑
-                self.adb.tap(*CHALLENGE_REWARD_CLOSE)
-                self._sleep(0.8)
+                # 支线页的「完美通关」印章：领取支线通关奖励宝箱，不走主线三宝箱逻辑
+                if not self._claim_challenge_perfect_reward(screen):
+                    self.adb.tap(*CHALLENGE_REWARD_CLOSE)
+                    self._sleep(0.8)
                 break
             elif state == GameState.HOME and entered_battle:
                 break
@@ -1043,6 +1041,53 @@ class Worker:
             self.log("[挑战] 超时，强制回战斗")
         self._force_back_to_battle()
         self.log("=== 挑战支线结束 ===")
+
+    def _is_challenge_perfect_clear(self, screen):
+        """支线页完美通关判断：OCR + 红色印章像素双保险。"""
+        if ocr_find_text(screen, CHALLENGE_PERFECT_KW, CHALLENGE_PERFECT_ROI, self.ocr):
+            self.log("[挑战] OCR 命中支线「完美通关」")
+            return True
+        x1, y1, x2, y2 = CHALLENGE_PERFECT_ROI
+        x1 = max(0, x1); y1 = max(0, y1)
+        x2 = min(screen.shape[1], x2); y2 = min(screen.shape[0], y2)
+        crop = screen[y1:y2, x1:x2]
+        if crop.size == 0:
+            return False
+        hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+        m1 = cv2.inRange(hsv, (0, 80, 80), (12, 255, 255))
+        m2 = cv2.inRange(hsv, (168, 80, 80), (180, 255, 255))
+        red_px = cv2.countNonZero(cv2.bitwise_or(m1, m2))
+        ok = red_px >= CHALLENGE_PERFECT_RED_MIN
+        self.log(f"[挑战] 支线完美通关红印检测 red={red_px}px → {ok}")
+        return ok
+
+    def _claim_challenge_perfect_reward(self, screen):
+        """支线页完美通关后点通关奖励宝箱并关闭奖励弹窗。"""
+        if not self._is_challenge_perfect_clear(screen):
+            self.log("[挑战] 未确认支线完美通关，跳过通关宝箱")
+            return False
+        self.log(f"[挑战] 点支线通关奖励宝箱 {CHALLENGE_REWARD_CHEST_POS}")
+        self.adb.tap(*CHALLENGE_REWARD_CHEST_POS)
+        self._sleep(CHALLENGE_REWARD_WAIT)
+        for _ in range(5):
+            if not self.running:
+                break
+            try:
+                reward_screen = self.adb.screencap()
+            except AdbError:
+                break
+            state = detect_state(reward_screen, self.ocr, detect_ad=False)
+            if state == GameState.REWARD_POPUP:
+                self.adb.tap(*CHALLENGE_REWARD_CLOSE)
+                self._sleep(0.8)
+                return True
+            if self._handle_challenge_reward_or_complete(reward_screen):
+                return True
+            self._sleep(0.5)
+        self.log("[挑战] 支线宝箱奖励弹窗未确认，点继续位置兜底")
+        self.adb.tap(*CHALLENGE_REWARD_CLOSE)
+        self._sleep(0.8)
+        return True
 
     def _handle_challenge_reward_or_complete(self, screen):
         """挑战奖励页兜底：识别到获得奖励/点击屏幕继续/确认则处理并返回 True。"""
@@ -1210,7 +1255,7 @@ class Worker:
         self.log("=== 限时活动日常结束 ===")
 
     def _do_seven_day_daily(self, icon_pos):
-        """七日狂欢：多轮复扫 1-7 天红点 + 兜底遍历，避免动画/小红点漏识别导致漏领。"""
+        """七日狂欢：不依赖红点，固定遍历 1-7 天的两个分类，领取所有可点项。"""
         self.log(f"=== 七日狂欢日常开始 (入口 {icon_pos}) ===")
         self.adb.tap(*icon_pos)
         self._sleep(SEVEN_DAY_ENTER_WAIT)
@@ -1218,30 +1263,11 @@ class Worker:
         for scan_round in range(SEVEN_DAY_RESCAN_ROUNDS):
             if not self.running:
                 break
-            try:
-                screen = self.adb.screencap()
-            except AdbError:
-                break
-
-            days_with_redot = []
-            for idx, (tx, ty) in enumerate(SEVEN_DAY_TAB_POSITIONS, start=1):
-                # 红点实测偏高，扩大 ROI；小红点漏识别时后面仍会遍历兜底
-                roi = (max(0, tx), 145, min(screen.shape[1], tx + 55), 205)
-                if self._has_redot(screen, roi, debug_label=f"7day-第{idx}天"):
-                    days_with_redot.append(idx)
-
-            ordered_days = list(days_with_redot)
-            ordered_days += [d for d in range(1, len(SEVEN_DAY_TAB_POSITIONS) + 1) if d not in ordered_days]
-            if days_with_redot:
-                self.log(f"[七日狂欢] 第{scan_round+1}轮红点天: {days_with_redot}；随后遍历其余天防漏")
-            else:
-                self.log(f"[七日狂欢] 第{scan_round+1}轮红点未命中，兜底遍历 1-7 天")
-
+            self.log(f"[七日狂欢] 第{scan_round+1}轮固定遍历 1-7 天")
             clicked_this_round = 0
-            for day in ordered_days:
+            for day, (tx, ty) in enumerate(SEVEN_DAY_TAB_POSITIONS, start=1):
                 if not self.running:
                     break
-                tx, ty = SEVEN_DAY_TAB_POSITIONS[day - 1]
                 self.log(f"[七日狂欢] 切第{day}天 tab ({tx},{ty})")
                 self.adb.tap(tx, ty)
                 self._sleep(SEVEN_DAY_PAGE_WAIT)
@@ -1253,6 +1279,7 @@ class Worker:
                     SEVEN_DAY_CLAIM_KW,
                     SEVEN_DAY_CLAIM_ROI,
                     SEVEN_DAY_AFTER_TAP,
+                    skip_keywords=SEVEN_DAY_SKIP_KEYWORDS,
                     close_pos=SEVEN_DAY_REWARD_CLOSE,
                 )
 
@@ -1264,7 +1291,7 @@ class Worker:
                     SEVEN_DAY_FREE_ROI,
                     SEVEN_DAY_AFTER_TAP,
                     max_rounds=3,
-                    skip_keywords=("已领取", "已领"),
+                    skip_keywords=SEVEN_DAY_SKIP_KEYWORDS,
                     close_pos=SEVEN_DAY_REWARD_CLOSE,
                 )
 

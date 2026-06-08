@@ -270,15 +270,16 @@ SEVEN_DAY_TAB_POSITIONS = [
 ]
 # 1-7 天 tab 红点 ROI（红点固定在 tab 文字右上 ~22px 位置，9x9 大小）
 # 自动从 tap 位置算：ROI = (tap_x + 8, 184, tap_x + 38, 215)
-SEVEN_DAY_CLAIM_ROI           = (300, 280, 540, 875)
+SEVEN_DAY_CLAIM_ROI           = (0, 280, 540, 875)
 SEVEN_DAY_CLAIM_KW            = "领取"
-SEVEN_DAY_FREE_ROI            = (300, 280, 540, 560)
+SEVEN_DAY_FREE_ROI            = (0, 280, 540, 875)
 SEVEN_DAY_FREE_KW             = "免费"
 SEVEN_DAY_ENTER_WAIT          = 1.5
 SEVEN_DAY_AFTER_TAP           = 0.8
 SEVEN_DAY_PAGE_WAIT           = 1.0
 SEVEN_DAY_REWARD_CLOSE        = (270, 760)   # 七日奖励弹窗「点击屏幕继续」区域，避免点右上角误退出页面
 SEVEN_DAY_RESCAN_ROUNDS       = 3            # 多轮复扫，防止切 tab/动画导致遗漏领取
+SEVEN_DAY_SKIP_KEYWORDS       = ("已领取", "已领", "继续领取")
 
 # === OCR 领取按钮通用配置 ===
 CLAIM_EMPTY_RECHECK           = 2
@@ -311,8 +312,7 @@ CASTLE_SPELL_TARGET_TPLS = (
     "castle_spell_scroll_page_row2_col2.png",
     "castle_spell_wind_page_row1_col2.png",
 )
-CASTLE_SPELL_MATCH_THRESHOLD = 0.88
-CASTLE_SPELL_SEARCH_ROI = (30, 360, 510, 800)  # 只在法术书技能货架区域匹配，避免误命中其他 UI
+CASTLE_SPELL_MATCH_THRESHOLD = 0.90
 CASTLE_SPELL_RESET_TO_TOP_TIMES = 3
 CASTLE_SPELL_SCROLL_TIMES = 4
 CASTLE_SPELL_SCROLL_DOWN_FROM = (270, 450)  # 手指向下滑，内容回到顶部
@@ -323,7 +323,7 @@ CASTLE_SPELL_SCROLL_DUR_MS = 400
 CASTLE_SPELL_AFTER_TAP = 1.0
 CASTLE_SPELL_POPUP_WAIT = 1.0
 CASTLE_SPELL_UPGRADE_KW = "升级"
-CASTLE_SPELL_UPGRADE_ROI = (220, 520, 540, 830)  # 技能详情页右下/下半区升级按钮
+CASTLE_SPELL_UPGRADE_ROI = (0, 360, 540, 900)  # 技能详情页下半屏找「升级」
 CASTLE_SPELL_CONFIRM_ROI = (250, 560, 540, 760)  # 升级二次确认按钮
 
 # === 挑战支线关卡 ===
@@ -334,6 +334,11 @@ CHALLENGE_TAB_WAIT = 1.5
 CHALLENGE_ENTER_WAIT = 1.5
 CHALLENGE_MAX_SECONDS = 900
 CHALLENGE_REWARD_CLOSE = (270, 760)
+CHALLENGE_PERFECT_KW = "完美通关"
+CHALLENGE_PERFECT_ROI = (320, 240, 525, 390)  # 支线卡片右侧红色「完美通关」印章
+CHALLENGE_PERFECT_RED_MIN = 80
+CHALLENGE_REWARD_CHEST_POS = (270, 335)       # 支线卡片中间「通关奖励」宝箱
+CHALLENGE_REWARD_WAIT = 1.0
 
 # === debug 截图环形覆盖 ===
 DEBUG_MAX_STEP_FILES     = 5000
