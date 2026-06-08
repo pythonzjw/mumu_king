@@ -82,10 +82,12 @@ from config import (
     WORKSHOP_ENTER_WAIT, WORKSHOP_AFTER_UPGRADE,
     WORKSHOP_POPUP_WAIT, WORKSHOP_AFTER_COLLECT,
     CASTLE_SPELL_TARGET_TPLS, CASTLE_SPELL_MATCH_THRESHOLD,
+    CASTLE_SPELL_SEARCH_ROI,
     CASTLE_SPELL_RESET_TO_TOP_TIMES, CASTLE_SPELL_SCROLL_TIMES,
     CASTLE_SPELL_SCROLL_DOWN_FROM, CASTLE_SPELL_SCROLL_DOWN_TO,
     CASTLE_SPELL_SCROLL_UP_FROM, CASTLE_SPELL_SCROLL_UP_TO,
     CASTLE_SPELL_SCROLL_DUR_MS, CASTLE_SPELL_AFTER_TAP, CASTLE_SPELL_POPUP_WAIT,
+    CASTLE_SPELL_UPGRADE_KW, CASTLE_SPELL_UPGRADE_ROI, CASTLE_SPELL_CONFIRM_ROI,
     CHALLENGE_BRANCH_ENTER_TPL, CHALLENGE_BRANCH_CARD_TPL,
     CHALLENGE_MATCH_THRESHOLD, CHALLENGE_TAB_WAIT, CHALLENGE_ENTER_WAIT,
     CHALLENGE_MAX_SECONDS, CHALLENGE_REWARD_CLOSE,
@@ -829,6 +831,12 @@ class Worker:
     def _find_castle_spell_targets(self, screen):
         """在当前法术书屏幕查找用户确认的指定技能模板，返回 [(tpl, cx, cy, score)]。"""
         hits = []
+        x1, y1, x2, y2 = CASTLE_SPELL_SEARCH_ROI
+        x1 = max(0, x1); y1 = max(0, y1)
+        x2 = min(screen.shape[1], x2); y2 = min(screen.shape[0], y2)
+        crop = screen[y1:y2, x1:x2]
+        if crop.size == 0:
+            return hits
         for tpl_name in CASTLE_SPELL_TARGET_TPLS:
             try:
                 tpl = _load_template(tpl_name)
@@ -836,14 +844,67 @@ class Worker:
                 self.log(f"[法术书] 模板缺失，跳过: {tpl_name}")
                 continue
             th, tw = tpl.shape[:2]
-            if screen.shape[0] < th or screen.shape[1] < tw:
+            if crop.shape[0] < th or crop.shape[1] < tw:
                 continue
-            res = cv2.matchTemplate(screen, tpl, cv2.TM_CCOEFF_NORMED)
+            res = cv2.matchTemplate(crop, tpl, cv2.TM_CCOEFF_NORMED)
             _, score, _, max_loc = cv2.minMaxLoc(res)
             if score >= CASTLE_SPELL_MATCH_THRESHOLD:
-                hits.append((tpl_name, max_loc[0] + tw // 2, max_loc[1] + th // 2, float(score)))
+                hits.append((tpl_name, x1 + max_loc[0] + tw // 2, y1 + max_loc[1] + th // 2, float(score)))
         hits.sort(key=lambda h: (h[2], h[1]))
         return hits
+
+    def _upgrade_castle_spell_detail(self, tpl_name):
+        """法术书技能详情页：先点「升级」，再点「确定」；找不到就安全关闭详情。"""
+        upgrade_hit = None
+        for _ in range(3):
+            if not self.running:
+                return False
+            try:
+                screen = self.adb.screencap()
+            except AdbError:
+                return False
+            hits = ocr_find_text(screen, CASTLE_SPELL_UPGRADE_KW, CASTLE_SPELL_UPGRADE_ROI, self.ocr)
+            usable = [(cx, cy, text) for cx, cy, text in hits if CASTLE_SPELL_UPGRADE_KW in re.sub(r"\s+", "", text or "")]
+            if usable:
+                upgrade_hit = usable[0]
+                break
+            self._sleep(0.5)
+
+        if not upgrade_hit:
+            self.log(f"[法术书] {tpl_name} 详情页未找到「升级」，关闭详情")
+            self.adb.tap(*REWARD_OUTSIDE)
+            self._sleep(0.5)
+            return False
+
+        ux, uy, text = upgrade_hit
+        self.log(f"[法术书] 点「{text.strip()}」({ux},{uy})")
+        self.adb.tap(ux, uy)
+        self._sleep(CASTLE_SPELL_AFTER_TAP)
+
+        confirmed = False
+        for _ in range(3):
+            if not self.running:
+                break
+            try:
+                screen = self.adb.screencap()
+            except AdbError:
+                break
+            confirm_hits = ocr_find_text(screen, WORKSHOP_CONFIRM_KW, CASTLE_SPELL_CONFIRM_ROI, self.ocr)
+            if confirm_hits:
+                ccx, ccy, ctext = confirm_hits[0]
+                self.log(f"[法术书] 点「{ctext.strip()}」({ccx},{ccy})")
+                self.adb.tap(ccx, ccy)
+                self._sleep(CASTLE_SPELL_AFTER_TAP)
+                confirmed = True
+                break
+            self._sleep(0.5)
+
+        if not confirmed:
+            self.log(f"[法术书] {tpl_name} 未找到二次「确定」，按已点升级处理")
+        # 确保回到法术书列表，避免下一轮误在详情页滑动/匹配
+        self.adb.tap(*REWARD_OUTSIDE)
+        self._sleep(0.5)
+        return True
 
     def _do_castle_spellbook_upgrade(self):
         """法术书指定技能升级：回到顶部后逐屏寻找 4 个固定模板，只点命中的目标技能。"""
@@ -880,20 +941,7 @@ class Worker:
                 self.adb.tap(cx, cy)
                 handled.add(key)
                 self._sleep(CASTLE_SPELL_POPUP_WAIT)
-                try:
-                    popup = self.adb.screencap()
-                except AdbError:
-                    continue
-                confirm_hits = ocr_find_text(popup, WORKSHOP_CONFIRM_KW, WORKSHOP_CONFIRM_ROI, self.ocr)
-                if confirm_hits:
-                    ccx, ccy, text = confirm_hits[0]
-                    self.log(f"[法术书] 点「{text.strip()}」({ccx},{ccy})")
-                    self.adb.tap(ccx, ccy)
-                    self._sleep(CASTLE_SPELL_AFTER_TAP)
-                else:
-                    self.log("[法术书] 未找到「确定」，点顶部空白兜底")
-                    self.adb.tap(*REWARD_OUTSIDE)
-                    self._sleep(0.5)
+                self._upgrade_castle_spell_detail(tpl_name)
 
             if scroll_idx < CASTLE_SPELL_SCROLL_TIMES:
                 self.adb.swipe(*CASTLE_SPELL_SCROLL_UP_FROM, *CASTLE_SPELL_SCROLL_UP_TO,
