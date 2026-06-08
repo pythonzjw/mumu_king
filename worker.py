@@ -81,15 +81,18 @@ from config import (
     WORKSHOP_SCROLL_DUR_MS, WORKSHOP_SCROLL_TIMES,
     WORKSHOP_ENTER_WAIT, WORKSHOP_AFTER_UPGRADE,
     WORKSHOP_POPUP_WAIT, WORKSHOP_AFTER_COLLECT,
-    CASTLE_SPELL_TARGET_TPLS, CASTLE_SPELL_MATCH_THRESHOLD,
+    CASTLE_SPELL_TARGETS, CASTLE_SPELL_MATCH_THRESHOLD,
+    CASTLE_SPELL_CHECK_OFFSET, CASTLE_SPELL_CHECK_THRESHOLD,
     CASTLE_SPELL_RESET_TO_TOP_TIMES, CASTLE_SPELL_SCROLL_TIMES,
     CASTLE_SPELL_SCROLL_DOWN_FROM, CASTLE_SPELL_SCROLL_DOWN_TO,
     CASTLE_SPELL_SCROLL_UP_FROM, CASTLE_SPELL_SCROLL_UP_TO,
     CASTLE_SPELL_SCROLL_DUR_MS, CASTLE_SPELL_AFTER_TAP, CASTLE_SPELL_POPUP_WAIT,
     CASTLE_SPELL_UPGRADE_KW, CASTLE_SPELL_UPGRADE_ROI, CASTLE_SPELL_CONFIRM_ROI,
+    CASTLE_SPELL_CONFIRM_TPL, CASTLE_SPELL_CONFIRM_TPL_THRESHOLD, CASTLE_SPELL_CONFIRM_FALLBACK,
     CHALLENGE_BRANCH_ENTER_TPL, CHALLENGE_BRANCH_CARD_TPL,
     CHALLENGE_MATCH_THRESHOLD, CHALLENGE_TAB_WAIT, CHALLENGE_ENTER_WAIT,
     CHALLENGE_MAX_SECONDS, CHALLENGE_REWARD_CLOSE,
+    CHALLENGE_PERFECT_TPL, CHALLENGE_PERFECT_TPL_THRESHOLD,
     CHALLENGE_PERFECT_KW, CHALLENGE_PERFECT_ROI, CHALLENGE_PERFECT_RED_MIN,
     CHALLENGE_REWARD_CHEST_POS, CHALLENGE_REWARD_WAIT,
     REDOT_MATCH_THRESHOLD,
@@ -830,23 +833,50 @@ class Worker:
         self._sleep(WORKSHOP_ENTER_WAIT)
 
     def _find_castle_spell_targets(self, screen):
-        """全图查找用户确认的指定技能模板，返回 [(tpl, cx, cy, score)]。"""
+        """全图查找指定技能：完整图标(金框+绿点)命中后，再用中心图案二次校验。"""
         hits = []
-        for tpl_name in CASTLE_SPELL_TARGET_TPLS:
+        ox, oy = CASTLE_SPELL_CHECK_OFFSET
+        for tpl_name, check_name in CASTLE_SPELL_TARGETS:
             try:
                 tpl = _load_template(tpl_name)
+                check_tpl = _load_template(check_name)
             except RecognizeError:
-                self.log(f"[法术书] 模板缺失，跳过: {tpl_name}")
+                self.log(f"[法术书] 模板缺失，跳过: {tpl_name}/{check_name}")
                 continue
             th, tw = tpl.shape[:2]
+            ch, cw = check_tpl.shape[:2]
             if screen.shape[0] < th or screen.shape[1] < tw:
                 continue
             res = cv2.matchTemplate(screen, tpl, cv2.TM_CCOEFF_NORMED)
-            _, score, _, max_loc = cv2.minMaxLoc(res)
-            if score >= CASTLE_SPELL_MATCH_THRESHOLD:
-                hits.append((tpl_name, max_loc[0] + tw // 2, max_loc[1] + th // 2, float(score)))
-        hits.sort(key=lambda h: (h[2], h[1]))
-        return hits
+            ys, xs = np.where(res >= CASTLE_SPELL_MATCH_THRESHOLD)
+            for y, x in sorted(zip(ys, xs), key=lambda p: float(res[p[0], p[1]]), reverse=True):
+                cx = x + tw // 2
+                cy = y + th // 2
+                # 同一技能同一位置只保留一次
+                if any(tpl_name == h[0] and abs(cx - h[1]) < 25 and abs(cy - h[2]) < 25 for h in hits):
+                    continue
+                crop = screen[y + oy:y + oy + ch, x + ox:x + ox + cw]
+                if crop.shape[:2] != (ch, cw):
+                    continue
+                check_score = float(cv2.matchTemplate(crop, check_tpl, cv2.TM_CCOEFF_NORMED)[0, 0])
+                if check_score < CASTLE_SPELL_CHECK_THRESHOLD:
+                    self.log(
+                        f"[法术书] 二次校验拒绝 {tpl_name} ({cx},{cy}) "
+                        f"full={float(res[y, x]):.2f} check={check_score:.2f}"
+                    )
+                    continue
+                hits.append((tpl_name, cx, cy, float(res[y, x]), check_score))
+
+        # 多模板同一位置只保留二次校验分最高的一个，避免重复点
+        hits.sort(key=lambda h: h[4], reverse=True)
+        deduped = []
+        for hit in hits:
+            _, cx, cy, _, _ = hit
+            if any(abs(cx - h[1]) < 40 and abs(cy - h[2]) < 40 for h in deduped):
+                continue
+            deduped.append(hit)
+        deduped.sort(key=lambda h: (h[2], h[1]))
+        return deduped
 
     def _upgrade_castle_spell_detail(self, tpl_name):
         """法术书技能详情页：先点「升级」，再点「确定」；找不到就安全关闭详情。"""
@@ -874,15 +904,25 @@ class Worker:
         ux, uy, text = upgrade_hit
         self.log(f"[法术书] 点「{text.strip()}」({ux},{uy})")
         self.adb.tap(ux, uy)
-        self._sleep(CASTLE_SPELL_AFTER_TAP)
+        self._sleep(CASTLE_SPELL_AFTER_TAP + 0.5)
 
         confirmed = False
-        for _ in range(3):
+        for _ in range(4):
             if not self.running:
                 break
             try:
                 screen = self.adb.screencap()
             except AdbError:
+                break
+            confirm_pos = find_template(
+                screen, CASTLE_SPELL_CONFIRM_TPL,
+                threshold=CASTLE_SPELL_CONFIRM_TPL_THRESHOLD,
+            )
+            if confirm_pos:
+                self.log(f"[法术书] 模板点「确定」{confirm_pos}")
+                self.adb.tap(*confirm_pos)
+                self._sleep(CASTLE_SPELL_AFTER_TAP)
+                confirmed = True
                 break
             confirm_hits = ocr_find_text(screen, WORKSHOP_CONFIRM_KW, CASTLE_SPELL_CONFIRM_ROI, self.ocr)
             if confirm_hits:
@@ -895,7 +935,9 @@ class Worker:
             self._sleep(0.5)
 
         if not confirmed:
-            self.log(f"[法术书] {tpl_name} 未找到二次「确定」，按已点升级处理")
+            self.log(f"[法术书] {tpl_name} 未识别到「确定」，兜底点击 {CASTLE_SPELL_CONFIRM_FALLBACK}")
+            self.adb.tap(*CASTLE_SPELL_CONFIRM_FALLBACK)
+            self._sleep(CASTLE_SPELL_AFTER_TAP)
         # 确保回到法术书列表，避免下一轮误在详情页滑动/匹配
         self.adb.tap(*REWARD_OUTSIDE)
         self._sleep(0.5)
@@ -926,9 +968,10 @@ class Worker:
             hits = self._find_castle_spell_targets(screen)
             if hits:
                 self.log("[法术书] 当前屏命中: " + ", ".join(
-                    f"{tpl}@({cx},{cy})/{score:.2f}" for tpl, cx, cy, score in hits
+                    f"{tpl}@({cx},{cy}) full={score:.2f} check={check:.2f}"
+                    for tpl, cx, cy, score, check in hits
                 ))
-            for tpl_name, cx, cy, _ in hits:
+            for tpl_name, cx, cy, _, _ in hits:
                 key = (tpl_name, cx // 30, cy // 30)
                 if key in handled:
                     continue
@@ -957,6 +1000,14 @@ class Worker:
             self.log(f"[挑战] 截图失败: {e}")
             self._force_back_to_battle()
             return
+
+        if self._claim_challenge_perfect_reward(screen):
+            try:
+                screen = self.adb.screencap()
+            except AdbError as e:
+                self.log(f"[挑战] 领取支线宝箱后截图失败: {e}")
+                self._force_back_to_battle()
+                return
 
         pos = find_template(screen, CHALLENGE_BRANCH_ENTER_TPL, CHALLENGE_MATCH_THRESHOLD)
         if pos is None:
@@ -1043,7 +1094,11 @@ class Worker:
         self.log("=== 挑战支线结束 ===")
 
     def _is_challenge_perfect_clear(self, screen):
-        """支线页完美通关判断：OCR + 红色印章像素双保险。"""
+        """支线页完美通关判断：专用印章模板优先，OCR + 红色像素兜底。"""
+        seal_pos = find_template(screen, CHALLENGE_PERFECT_TPL, CHALLENGE_PERFECT_TPL_THRESHOLD)
+        if seal_pos:
+            self.log(f"[挑战] 模板命中支线「完美通关」{seal_pos}")
+            return True
         if ocr_find_text(screen, CHALLENGE_PERFECT_KW, CHALLENGE_PERFECT_ROI, self.ocr):
             self.log("[挑战] OCR 命中支线「完美通关」")
             return True

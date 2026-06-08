@@ -306,13 +306,16 @@ WORKSHOP_POPUP_WAIT          = 1.5
 WORKSHOP_AFTER_COLLECT       = 0.8
 
 # === 城堡法术书指定技能升级 ===
-CASTLE_SPELL_TARGET_TPLS = (
-    "castle_spell_page2_row1_col3.png",
-    "castle_spell_dragon_page_row2_col3.png",
-    "castle_spell_scroll_page_row2_col2.png",
-    "castle_spell_wind_page_row1_col2.png",
+CASTLE_SPELL_TARGETS = (
+    ("castle_spell_page2_row1_col3.png", "castle_spell_check_page2_row1_col3.png"),
+    ("castle_spell_dragon_page_row2_col3.png", "castle_spell_check_dragon_page_row2_col3.png"),
+    ("castle_spell_scroll_page_row2_col2.png", "castle_spell_check_scroll_page_row2_col2.png"),
+    ("castle_spell_wind_page_row1_col2.png", "castle_spell_check_wind_page_row1_col2.png"),
 )
-CASTLE_SPELL_MATCH_THRESHOLD = 0.90
+# 第一层完整图标必须包含金框+绿点，确认可升级；第二层只校验中心技能图案，避免相似技能误识别
+CASTLE_SPELL_MATCH_THRESHOLD = 0.86
+CASTLE_SPELL_CHECK_OFFSET = (38, 47)
+CASTLE_SPELL_CHECK_THRESHOLD = 0.50
 CASTLE_SPELL_RESET_TO_TOP_TIMES = 3
 CASTLE_SPELL_SCROLL_TIMES = 4
 CASTLE_SPELL_SCROLL_DOWN_FROM = (270, 450)  # 手指向下滑，内容回到顶部
@@ -325,6 +328,9 @@ CASTLE_SPELL_POPUP_WAIT = 1.0
 CASTLE_SPELL_UPGRADE_KW = "升级"
 CASTLE_SPELL_UPGRADE_ROI = (0, 360, 540, 900)  # 技能详情页下半屏找「升级」
 CASTLE_SPELL_CONFIRM_ROI = (250, 560, 540, 760)  # 升级二次确认按钮
+CASTLE_SPELL_CONFIRM_TPL = "confirm_ok_button.png"
+CASTLE_SPELL_CONFIRM_TPL_THRESHOLD = 0.78
+CASTLE_SPELL_CONFIRM_FALLBACK = (270, 620)
 
 # === 挑战支线关卡 ===
 CHALLENGE_BRANCH_ENTER_TPL = "challenge_branch_enter.png"
@@ -334,6 +340,8 @@ CHALLENGE_TAB_WAIT = 1.5
 CHALLENGE_ENTER_WAIT = 1.5
 CHALLENGE_MAX_SECONDS = 900
 CHALLENGE_REWARD_CLOSE = (270, 760)
+CHALLENGE_PERFECT_TPL = "challenge_branch_perfect_seal.png"
+CHALLENGE_PERFECT_TPL_THRESHOLD = 0.80
 CHALLENGE_PERFECT_KW = "完美通关"
 CHALLENGE_PERFECT_ROI = (320, 240, 525, 390)  # 支线卡片右侧红色「完美通关」印章
 CHALLENGE_PERFECT_RED_MIN = 80
