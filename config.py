@@ -48,6 +48,8 @@ SETTLE_WAIT = 1.0            # 点结算确定后等
 SETTLE_DOUBLE_KW   = "双倍"  # 结算页双倍奖励按钮关键字
 SETTLE_DOUBLE_ROI  = (100, 780, 280, 880)  # 左下双倍按钮搜索区
 SETTLE_DOUBLE_WAIT = 1.0     # 点双倍后等是否进广告
+SETTLE_DEFEAT_KWS  = ("失败", "战败")  # 失败结算页不点双倍
+SETTLE_DEFEAT_ROI  = (0, 0, 540, 260)
 SKILL_SELECT_DELAY = 0.3     # 技能选择后延迟
 
 # === 图像识别配置 ===
@@ -207,7 +209,7 @@ ADS_TIMEOUT_SEC      = 60
 ADS_POLL_INTERVAL    = 1.0
 ADS_AFTER_CLOSE_WAIT = 1.5
 ADS_PROGRESS_KEYWORDS = ("跳过", "秒")
-ADS_PAUSE_CHECK_SEC   = 8
+ADS_PAUSE_CHECK_SEC   = 18
 ADS_RESUME_TAP        = (270, 480)
 
 # === Boss 轮盘弹窗底部「跳过」按钮（OCR 实测 (264, 905)）===
@@ -313,9 +315,10 @@ CASTLE_SPELL_TARGETS = (
     ("castle_spell_wind_page_row1_col2.png", "castle_spell_check_wind_page_row1_col2.png"),
 )
 # 第一层完整图标必须包含金框+绿点，确认可升级；第二层只校验中心技能图案，避免相似技能误识别
-CASTLE_SPELL_MATCH_THRESHOLD = 0.86
+CASTLE_SPELL_MATCH_THRESHOLD = 0.92
 CASTLE_SPELL_CHECK_OFFSET = (38, 47)
-CASTLE_SPELL_CHECK_THRESHOLD = 0.50
+CASTLE_SPELL_CHECK_THRESHOLD = 0.70
+CASTLE_SPELL_ALLOWED_X_RANGES = ((205, 335), (350, 500))  # 只允许第2/3列，防止误点左列火球等
 CASTLE_SPELL_RESET_TO_TOP_TIMES = 3
 CASTLE_SPELL_SCROLL_TIMES = 4
 CASTLE_SPELL_SCROLL_DOWN_FROM = (270, 450)  # 手指向下滑，内容回到顶部
@@ -327,10 +330,11 @@ CASTLE_SPELL_AFTER_TAP = 1.0
 CASTLE_SPELL_POPUP_WAIT = 1.0
 CASTLE_SPELL_UPGRADE_KW = "升级"
 CASTLE_SPELL_UPGRADE_ROI = (0, 360, 540, 900)  # 技能详情页下半屏找「升级」
+CASTLE_SPELL_DETAIL_NAME_ROI = (0, 240, 540, 620)
+CASTLE_SPELL_DETAIL_BLOCK_KWS = ("火球", "火球术", "滚木")
 CASTLE_SPELL_CONFIRM_ROI = (250, 560, 540, 760)  # 升级二次确认按钮
 CASTLE_SPELL_CONFIRM_TPL = "confirm_ok_button.png"
 CASTLE_SPELL_CONFIRM_TPL_THRESHOLD = 0.78
-CASTLE_SPELL_CONFIRM_FALLBACK = (270, 620)
 
 # === 挑战支线关卡 ===
 CHALLENGE_BRANCH_ENTER_TPL = "challenge_branch_enter.png"

@@ -26,6 +26,7 @@ def _imwrite_unicode(path, img):
 from config import (
     GameState, LOOP_INTERVAL, BATTLE_WAIT, ENTER_WAIT,
     SETTLE_WAIT, SETTLE_DOUBLE_KW, SETTLE_DOUBLE_ROI, SETTLE_DOUBLE_WAIT,
+    SETTLE_DEFEAT_KWS, SETTLE_DEFEAT_ROI,
     SKILL_SELECT_DELAY, SKILL_CARD_ROIS,
     CHEST_POSITIONS, CHEST_WAIT, REWARD_OUTSIDE,
     SWIPE_LEFT_FROM, SWIPE_LEFT_TO, SWIPE_LEFT_DURATION_MS,
@@ -88,7 +89,9 @@ from config import (
     CASTLE_SPELL_SCROLL_UP_FROM, CASTLE_SPELL_SCROLL_UP_TO,
     CASTLE_SPELL_SCROLL_DUR_MS, CASTLE_SPELL_AFTER_TAP, CASTLE_SPELL_POPUP_WAIT,
     CASTLE_SPELL_UPGRADE_KW, CASTLE_SPELL_UPGRADE_ROI, CASTLE_SPELL_CONFIRM_ROI,
-    CASTLE_SPELL_CONFIRM_TPL, CASTLE_SPELL_CONFIRM_TPL_THRESHOLD, CASTLE_SPELL_CONFIRM_FALLBACK,
+    CASTLE_SPELL_DETAIL_NAME_ROI, CASTLE_SPELL_DETAIL_BLOCK_KWS,
+    CASTLE_SPELL_CONFIRM_TPL, CASTLE_SPELL_CONFIRM_TPL_THRESHOLD,
+    CASTLE_SPELL_ALLOWED_X_RANGES,
     CHALLENGE_BRANCH_ENTER_TPL, CHALLENGE_BRANCH_CARD_TPL,
     CHALLENGE_MATCH_THRESHOLD, CHALLENGE_TAB_WAIT, CHALLENGE_ENTER_WAIT,
     CHALLENGE_MAX_SECONDS, CHALLENGE_REWARD_CLOSE,
@@ -279,10 +282,19 @@ class Worker:
             self.adb.tap(cx, cy)
         self._sleep(SKILL_SELECT_DELAY)
 
+    def _is_defeat_settle(self, screen):
+        """失败结算页不点双倍；识别失败则保守直接确认。"""
+        for kw in SETTLE_DEFEAT_KWS:
+            if ocr_find_text(screen, kw, SETTLE_DEFEAT_ROI, self.ocr):
+                return True
+        return False
+
     def _handle_settle(self, screen):
-        """战斗胜利/失败结算页：有双倍次数就看广告；0/3 时直接确认"""
+        """战斗结算页：失败不点双倍；其它结算有双倍次数就看广告，0/3 直接确认。"""
         db_hits = ocr_find_text(screen, SETTLE_DOUBLE_KW, SETTLE_DOUBLE_ROI, self.ocr)
-        if db_hits:
+        if db_hits and self._is_defeat_settle(screen):
+            self.log("[结算] 识别到失败结算，跳过双倍")
+        elif db_hits:
             cx, cy, text = db_hits[0]
             norm = re.sub(r"\s+", "", text).replace("／", "/")
             if re.search(r"0/3", norm):
@@ -852,6 +864,9 @@ class Worker:
             for y, x in sorted(zip(ys, xs), key=lambda p: float(res[p[0], p[1]]), reverse=True):
                 cx = x + tw // 2
                 cy = y + th // 2
+                if not any(lo <= cx <= hi for lo, hi in CASTLE_SPELL_ALLOWED_X_RANGES):
+                    self.log(f"[法术书] 位置拒绝 {tpl_name} ({cx},{cy})，不在目标列")
+                    continue
                 # 同一技能同一位置只保留一次
                 if any(tpl_name == h[0] and abs(cx - h[1]) < 25 and abs(cy - h[2]) < 25 for h in hits):
                     continue
@@ -888,6 +903,13 @@ class Worker:
                 screen = self.adb.screencap()
             except AdbError:
                 return False
+            for bad in CASTLE_SPELL_DETAIL_BLOCK_KWS:
+                bad_hits = ocr_find_text(screen, bad, CASTLE_SPELL_DETAIL_NAME_ROI, self.ocr)
+                if bad_hits:
+                    self.log(f"[法术书] 详情页命中禁止技能「{bad}」，关闭不升级")
+                    self.adb.tap(*REWARD_OUTSIDE)
+                    self._sleep(0.5)
+                    return False
             hits = ocr_find_text(screen, CASTLE_SPELL_UPGRADE_KW, CASTLE_SPELL_UPGRADE_ROI, self.ocr)
             usable = [(cx, cy, text) for cx, cy, text in hits if CASTLE_SPELL_UPGRADE_KW in re.sub(r"\s+", "", text or "")]
             if usable:
@@ -935,9 +957,7 @@ class Worker:
             self._sleep(0.5)
 
         if not confirmed:
-            self.log(f"[法术书] {tpl_name} 未识别到「确定」，兜底点击 {CASTLE_SPELL_CONFIRM_FALLBACK}")
-            self.adb.tap(*CASTLE_SPELL_CONFIRM_FALLBACK)
-            self._sleep(CASTLE_SPELL_AFTER_TAP)
+            self.log(f"[法术书] {tpl_name} 未识别到「确定」，取消兜底点击防止误升级")
         # 确保回到法术书列表，避免下一轮误在详情页滑动/匹配
         self.adb.tap(*REWARD_OUTSIDE)
         self._sleep(0.5)
@@ -1480,10 +1500,13 @@ class Worker:
 
     def _watch_ad(self, timeout=ADS_TIMEOUT_SEC):
         """看广告：右上角小 ROI 持续 OCR 等「关闭」出现 → 点。
-        识别到跳过/秒时只等待；疑似暂停时点一次中心恢复播放；未确认关闭返回 False。
+        识别到跳过/秒时只等待；倒计时长时间不变化才点一次中心恢复播放；未确认关闭返回 False。
         """
         deadline = time.time() + timeout
         progress_seen_since = None
+        progress_changed_at = None
+        last_countdown = None
+        last_progress_text = ""
         resume_tapped = False
         while time.time() < deadline and self.running:
             try:
@@ -1501,20 +1524,38 @@ class Worker:
                     self._sleep(1.0)
                     return True
             has_progress = False
+            progress_texts = []
             for kw in ADS_PROGRESS_KEYWORDS:
-                if ocr_find_text(screen, kw, ADS_SKIP_ROI, self.ocr):
+                hits = ocr_find_text(screen, kw, ADS_SKIP_ROI, self.ocr)
+                if hits:
                     has_progress = True
-                    break
+                    progress_texts.extend(text or "" for _, _, text in hits)
             if has_progress:
+                now = time.time()
                 if progress_seen_since is None:
-                    progress_seen_since = time.time()
-                if time.time() - progress_seen_since >= ADS_PAUSE_CHECK_SEC and not resume_tapped:
+                    progress_seen_since = now
+                    progress_changed_at = now
+
+                progress_blob = "|".join(progress_texts)
+                nums = [int(n) for n in re.findall(r"\d+", progress_blob)]
+                countdown = nums[0] if nums else None
+                if countdown != last_countdown or (countdown is None and progress_blob != last_progress_text):
+                    last_countdown = countdown
+                    last_progress_text = progress_blob
+                    progress_changed_at = now
+                    resume_tapped = False
+
+                unchanged_for = now - (progress_changed_at or progress_seen_since)
+                if unchanged_for >= ADS_PAUSE_CHECK_SEC and not resume_tapped:
                     self.log(f"[广告] 疑似暂停，点中心恢复播放 {ADS_RESUME_TAP}")
                     self.adb.tap(*ADS_RESUME_TAP)
                     resume_tapped = True
                 # 仍在广告进度页，继续等待关闭
             else:
                 progress_seen_since = None
+                progress_changed_at = None
+                last_countdown = None
+                last_progress_text = ""
             self._sleep(ADS_POLL_INTERVAL)
         self.log(f"[广告] 超时 {timeout}s，未确认关闭，跳过后续点击")
         return False
