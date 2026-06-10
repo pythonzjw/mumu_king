@@ -26,7 +26,6 @@ def _imwrite_unicode(path, img):
 from config import (
     GameState, LOOP_INTERVAL, BATTLE_WAIT, ENTER_WAIT,
     SETTLE_WAIT, SETTLE_DOUBLE_KW, SETTLE_DOUBLE_ROI, SETTLE_DOUBLE_WAIT,
-    SETTLE_DEFEAT_KWS, SETTLE_DEFEAT_ROI,
     SKILL_SELECT_DELAY, SKILL_CARD_ROIS,
     CHEST_POSITIONS, CHEST_WAIT, REWARD_OUTSIDE,
     SWIPE_LEFT_FROM, SWIPE_LEFT_TO, SWIPE_LEFT_DURATION_MS,
@@ -90,10 +89,9 @@ from config import (
     CASTLE_SPELL_SCROLL_DUR_MS, CASTLE_SPELL_AFTER_TAP, CASTLE_SPELL_POPUP_WAIT,
     CASTLE_SPELL_UPGRADE_KW, CASTLE_SPELL_UPGRADE_ROI, CASTLE_SPELL_CONFIRM_ROI,
     CASTLE_SPELL_DETAIL_NAME_ROI, CASTLE_SPELL_DETAIL_BLOCK_KWS,
-    CASTLE_SPELL_CONFIRM_TPL, CASTLE_SPELL_CONFIRM_TPL_THRESHOLD,
-    CASTLE_SPELL_ALLOWED_X_RANGES,
+    CASTLE_SPELL_CONFIRM_TPL, CASTLE_SPELL_CONFIRM_TPL_THRESHOLD, CASTLE_SPELL_CONFIRM_FALLBACK,
     CHALLENGE_BRANCH_ENTER_TPL, CHALLENGE_BRANCH_CARD_TPL,
-    CHALLENGE_MATCH_THRESHOLD, CHALLENGE_TAB_WAIT, CHALLENGE_ENTER_WAIT,
+    CHALLENGE_MATCH_THRESHOLD, CHALLENGE_TAB_WAIT, CHALLENGE_TAB_RETRY, CHALLENGE_ENTER_WAIT,
     CHALLENGE_MAX_SECONDS, CHALLENGE_REWARD_CLOSE,
     CHALLENGE_PERFECT_TPL, CHALLENGE_PERFECT_TPL_THRESHOLD,
     CHALLENGE_PERFECT_KW, CHALLENGE_PERFECT_ROI, CHALLENGE_PERFECT_RED_MIN,
@@ -282,19 +280,10 @@ class Worker:
             self.adb.tap(cx, cy)
         self._sleep(SKILL_SELECT_DELAY)
 
-    def _is_defeat_settle(self, screen):
-        """失败结算页不点双倍；识别失败则保守直接确认。"""
-        for kw in SETTLE_DEFEAT_KWS:
-            if ocr_find_text(screen, kw, SETTLE_DEFEAT_ROI, self.ocr):
-                return True
-        return False
-
     def _handle_settle(self, screen):
-        """战斗结算页：失败不点双倍；其它结算有双倍次数就看广告，0/3 直接确认。"""
+        """战斗结算页：左下找到双倍且次数未用完就看广告，0/3 直接确认。"""
         db_hits = ocr_find_text(screen, SETTLE_DOUBLE_KW, SETTLE_DOUBLE_ROI, self.ocr)
-        if db_hits and self._is_defeat_settle(screen):
-            self.log("[结算] 识别到失败结算，跳过双倍")
-        elif db_hits:
+        if db_hits:
             cx, cy, text = db_hits[0]
             norm = re.sub(r"\s+", "", text).replace("／", "/")
             if re.search(r"0/3", norm):
@@ -864,9 +853,6 @@ class Worker:
             for y, x in sorted(zip(ys, xs), key=lambda p: float(res[p[0], p[1]]), reverse=True):
                 cx = x + tw // 2
                 cy = y + th // 2
-                if not any(lo <= cx <= hi for lo, hi in CASTLE_SPELL_ALLOWED_X_RANGES):
-                    self.log(f"[法术书] 位置拒绝 {tpl_name} ({cx},{cy})，不在目标列")
-                    continue
                 # 同一技能同一位置只保留一次
                 if any(tpl_name == h[0] and abs(cx - h[1]) < 25 and abs(cy - h[2]) < 25 for h in hits):
                     continue
@@ -957,7 +943,9 @@ class Worker:
             self._sleep(0.5)
 
         if not confirmed:
-            self.log(f"[法术书] {tpl_name} 未识别到「确定」，取消兜底点击防止误升级")
+            self.log(f"[法术书] {tpl_name} 未识别到「确定」，点固定确认位 {CASTLE_SPELL_CONFIRM_FALLBACK}")
+            self.adb.tap(*CASTLE_SPELL_CONFIRM_FALLBACK)
+            self._sleep(CASTLE_SPELL_AFTER_TAP)
         # 确保回到法术书列表，避免下一轮误在详情页滑动/匹配
         self.adb.tap(*REWARD_OUTSIDE)
         self._sleep(0.5)
@@ -980,21 +968,28 @@ class Worker:
         for scroll_idx in range(CASTLE_SPELL_SCROLL_TIMES + 1):
             if not self.running:
                 break
-            try:
-                screen = self.adb.screencap()
-            except AdbError:
-                break
+            # 当前屏每点完一个技能都重新截图识别，避免沿用旧坐标误点。
+            for _ in range(6):
+                try:
+                    screen = self.adb.screencap()
+                except AdbError:
+                    break
 
-            hits = self._find_castle_spell_targets(screen)
-            if hits:
-                self.log("[法术书] 当前屏命中: " + ", ".join(
-                    f"{tpl}@({cx},{cy}) full={score:.2f} check={check:.2f}"
-                    for tpl, cx, cy, score, check in hits
-                ))
-            for tpl_name, cx, cy, _, _ in hits:
-                key = (tpl_name, cx // 30, cy // 30)
-                if key in handled:
-                    continue
+                hits = self._find_castle_spell_targets(screen)
+                if hits:
+                    self.log("[法术书] 当前屏命中: " + ", ".join(
+                        f"{tpl}@({cx},{cy}) full={score:.2f} check={check:.2f}"
+                        for tpl, cx, cy, score, check in hits
+                    ))
+                next_hit = None
+                for tpl_name, cx, cy, _, _ in hits:
+                    key = (tpl_name, cx // 30, cy // 30)
+                    if key not in handled:
+                        next_hit = (tpl_name, cx, cy, key)
+                        break
+                if not next_hit:
+                    break
+                tpl_name, cx, cy, key = next_hit
                 self.log(f"[法术书] 点目标技能 {tpl_name} ({cx},{cy})")
                 self.adb.tap(cx, cy)
                 handled.add(key)
@@ -1014,26 +1009,32 @@ class Worker:
         self.adb.tap(*TAB_CHALLENGE)
         self._sleep(CHALLENGE_TAB_WAIT)
 
-        try:
-            screen = self.adb.screencap()
-        except AdbError as e:
-            self.log(f"[挑战] 截图失败: {e}")
-            self._force_back_to_battle()
-            return
-
-        if self._claim_challenge_perfect_reward(screen):
+        pos = None
+        for retry in range(CHALLENGE_TAB_RETRY):
             try:
                 screen = self.adb.screencap()
             except AdbError as e:
-                self.log(f"[挑战] 领取支线宝箱后截图失败: {e}")
+                self.log(f"[挑战] 截图失败: {e}")
+                self._sleep(0.8)
+                continue
+
+            # 进支线页后先判断是否已完美通关；是则先点通关宝箱，本轮支线结束。
+            if self._claim_challenge_perfect_reward(screen):
                 self._force_back_to_battle()
+                self.log("=== 挑战支线结束 ===")
                 return
 
-        pos = find_template(screen, CHALLENGE_BRANCH_ENTER_TPL, CHALLENGE_MATCH_THRESHOLD)
-        if pos is None:
-            # 整卡模板只是确认是否在支线页面；入口按钮没命中就不乱点
+            pos = find_template(screen, CHALLENGE_BRANCH_ENTER_TPL, CHALLENGE_MATCH_THRESHOLD)
+            if pos is not None:
+                break
+
+            # 整卡模板用于确认已在支线页；没加载出来就等下一轮，不要立刻切回战斗。
             card_pos = find_template(screen, CHALLENGE_BRANCH_CARD_TPL, CHALLENGE_MATCH_THRESHOLD)
-            self.log(f"[挑战] 未匹配到支线进入游戏按钮，跳过 (card={card_pos})")
+            self.log(f"[挑战] 第{retry+1}/{CHALLENGE_TAB_RETRY}次未匹配到支线进入游戏按钮 (card={card_pos})")
+            self._sleep(1.0)
+
+        if pos is None:
+            self.log("[挑战] 多次未匹配到支线进入游戏按钮，跳过")
             self._force_back_to_battle()
             self.log("=== 挑战支线结束 ===")
             return
